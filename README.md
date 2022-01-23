@@ -1,1 +1,1 @@
-a work-in-progress c++ compiler
+a work-in-progress c compiler
