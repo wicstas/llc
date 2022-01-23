@@ -4,8 +4,14 @@ using namespace llc;
 
 int main() {
     std::string source = R"(
-        int i = 0;
-        while(i++ < 10){
+        struct Time{
+            float hour;
+            float minute;
+            float second;
+        };
+
+
+        for(int i = 0;i < 10;i++){
             if(i == 5){
                 print(100);
             }else if(i == 6){

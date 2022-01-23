@@ -39,6 +39,7 @@ enum class TokenType {
     Exclamation,
     Increment,
     Decrement,
+    Struct,
     Invalid,
     NumTokens
 };
@@ -72,6 +73,7 @@ static const char* token_type_names[] = {
     "Exclamation",
     "Increment",
     "Decrement",
+    "Struct",
     "Invalid",
 };
 
@@ -126,6 +128,8 @@ inline TokenType get_identifier_type(std::string str) {
         return TokenType::For;
     if (str == "while")
         return TokenType::While;
+    if (str == "struct")
+        return TokenType::Struct;
     return TokenType::Variable;
 }
 
