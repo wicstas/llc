@@ -20,7 +20,7 @@ struct Parser {
 
         try {
             parse_tokens();
-            parse_controlflow_recursive(scope);
+            construct_recursively(scope);
         } catch (Exception e) {
             handle_exception(e);
         }
@@ -37,19 +37,21 @@ struct Parser {
 
   private:
     std::shared_ptr<Expression> parse_elementary_group(ElementaryGroup eg) {
-        int highest_precedence = 0;
-        for (auto& element : eg)
-            highest_precedence = std::max(highest_precedence, element->precendence);
+        if (eg.size() > 1) {
+            int highest_precedence = 0;
+            for (auto& element : eg)
+                highest_precedence = std::max(highest_precedence, element->precendence);
 
-        for (int precedence = highest_precedence; precedence >= 0; precedence--) {
-            for (int i = 0; i < (int)eg.size(); i++) {
-                if (eg[i]->precendence == precedence) {
-                    std::vector<int> merged = eg[i]->construct(*scope, eg, i);
-                    std::sort(merged.begin(), merged.end(), std::greater<int>());
-                    for (int index : merged) {
-                        eg.erase(eg.begin() + index);
-                        if (index < i)
-                            i--;
+            for (int precedence = highest_precedence; precedence >= 0; precedence--) {
+                for (int i = 0; i < (int)eg.size(); i++) {
+                    if (eg[i]->precendence == precedence) {
+                        std::vector<int> merged = eg[i]->construct(*scope, eg, i);
+                        std::sort(merged.begin(), merged.end(), std::greater<int>());
+                        for (int index : merged) {
+                            eg.erase(eg.begin() + index);
+                            if (index < i)
+                                i--;
+                        }
                     }
                 }
             }
@@ -63,6 +65,8 @@ struct Parser {
         scope = std::make_shared<Scope>();
         ElementaryGroup eg;
         int precendence_bias = 0;
+
+        int struct_decl_pos = -1;
 
         for (const auto& token : tokens) {
             if (token.type == TokenType::Semicolon) {
@@ -80,6 +84,19 @@ struct Parser {
             } else if (token.type == TokenType::RightCurlyBracket) {
                 LLC_CHECK(eg.size() == 0);
                 scope = scope->parent_scope;
+                if (struct_decl_pos != -1) {
+                    LLC_CHECK(scope->statements[struct_decl_pos].is_struct_decl());
+                    std::vector<int> merged =
+                        scope->statements[struct_decl_pos].struct_decl->construct(
+                            *scope, scope->statements, struct_decl_pos);
+
+                    std::sort(merged.begin(), merged.end(), std::greater<int>());
+                    for (int index : merged) {
+                        scope->statements.erase(scope->statements.begin() + index);
+                    }
+
+                    struct_decl_pos = -1;
+                }
             } else if (token.type == TokenType::LeftParenthesis) {
                 precendence_bias += max_precedence;
             } else if (token.type == TokenType::RightParenthesis) {
@@ -87,16 +104,20 @@ struct Parser {
             } else if (is_controlflow(token)) {
                 std::shared_ptr<ControlFlow> controlflow(ControlFlow::create(token));
                 scope->statements.emplace_back(controlflow);
+            } else if (token.type == TokenType::StructDecl) {
+                std::shared_ptr<StructDecl> struct_decl(StructDecl::create(token));
+                struct_decl_pos = (int)scope->statements.size();
+                scope->statements.emplace_back(struct_decl);
             } else {
                 eg.emplace_back(Elementary::create(token, precendence_bias));
             }
         }
     }
 
-    void parse_controlflow_recursive(std::shared_ptr<Scope> scope) {
+    void construct_recursively(std::shared_ptr<Scope> scope) {
         for (int i = 0; i < (int)scope->statements.size(); i++)
             if (scope->statements[i].is_scope())
-                parse_controlflow_recursive(scope->statements[i].scope);
+                construct_recursively(scope->statements[i].scope);
 
         for (int i = 0; i < (int)scope->statements.size(); i++) {
             if (scope->statements[i].is_controlflow()) {

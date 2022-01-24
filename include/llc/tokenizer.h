@@ -21,10 +21,10 @@ enum class TokenType {
     RightCurlyBracket,
     Semicolon,
     Print,
+    Type,
+    Identifier,
     Assign,
-    Variable,
-    Float,
-    Int,
+    Dot,
     If,
     ElseIf,
     Else,
@@ -39,7 +39,7 @@ enum class TokenType {
     Exclamation,
     Increment,
     Decrement,
-    Struct,
+    StructDecl,
     Invalid,
     NumTokens
 };
@@ -55,10 +55,10 @@ static const char* token_type_names[] = {
     "RightCurlyBracket",
     "Semicolon",
     "Print",
+    "Type",
+    "Identifier",
     "Assign",
-    "Variable",
-    "Float",
-    "Int",
+    "Dot",
     "If",
     "ElseIf",
     "Else",
@@ -73,7 +73,7 @@ static const char* token_type_names[] = {
     "Exclamation",
     "Increment",
     "Decrement",
-    "Struct",
+    "StructDecl",
     "Invalid",
 };
 
@@ -111,27 +111,6 @@ inline bool is_controlflow(Token token) {
            token.type == TokenType::Else || token.type == TokenType::For ||
            token.type == TokenType::While;
 }
-inline TokenType get_identifier_type(std::string str) {
-    if (str == "print")
-        return TokenType::Print;
-    if (str == "int")
-        return TokenType::Int;
-    if (str == "float")
-        return TokenType::Float;
-    if (str == "if")
-        return TokenType::If;
-    if (str == "else if")
-        return TokenType::ElseIf;
-    if (str == "else")
-        return TokenType::Else;
-    if (str == "for")
-        return TokenType::For;
-    if (str == "while")
-        return TokenType::While;
-    if (str == "struct")
-        return TokenType::Struct;
-    return TokenType::Variable;
-}
 
 struct Tokenizer {
     std::vector<Token> tokenize(const std::string& source) {
@@ -168,6 +147,7 @@ struct Tokenizer {
             case '{': token.type = TokenType::LeftCurlyBracket; break;
             case '}': token.type = TokenType::RightCurlyBracket; break;
             case ';': token.type = TokenType::Semicolon; break;
+            case '.': token.type = TokenType::Dot; break;
             case '<':
                 if (next() == '=') {
                     token.type = TokenType::LessEqual;
@@ -215,6 +195,9 @@ struct Tokenizer {
                     }
                     token.type = get_identifier_type(identifier);
                     token.identifier = identifier;
+                    if (tokens.size() && tokens.back().type == TokenType::Identifier &&
+                        token.type == TokenType::Identifier)
+                        tokens.back().type = TokenType::Type;
                 }
                 break;
             }
@@ -276,6 +259,24 @@ struct Tokenizer {
             }
             ptr++;
         }
+    }
+    TokenType get_identifier_type(std::string str) {
+        if (str == "print")
+            return TokenType::Print;
+        else if (str == "if")
+            return TokenType::If;
+        else if (str == "else if")
+            return TokenType::ElseIf;
+        else if (str == "else")
+            return TokenType::Else;
+        else if (str == "for")
+            return TokenType::For;
+        else if (str == "while")
+            return TokenType::While;
+        else if (str == "struct")
+            return TokenType::StructDecl;
+        else
+            return TokenType::Identifier;
     }
 
   private:

@@ -10,6 +10,10 @@ int main() {
             float second;
         };
 
+        Time time;
+
+        time.hour = 10;
+        print(time.hour);
 
         for(int i = 0;i < 10;i++){
             if(i == 5){
