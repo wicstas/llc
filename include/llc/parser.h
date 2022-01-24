@@ -49,7 +49,7 @@ struct Parser {
                         std::sort(merged.begin(), merged.end(), std::greater<int>());
                         for (int index : merged) {
                             eg.erase(eg.begin() + index);
-                            if (index < i)
+                            if (index <= i)
                                 i--;
                         }
                     }
@@ -126,7 +126,7 @@ struct Parser {
                 std::sort(merged.begin(), merged.end(), std::greater<int>());
                 for (int index : merged) {
                     scope->statements.erase(scope->statements.begin() + index);
-                    if (index < i)
+                    if (index <= i)
                         i--;
                 }
             }

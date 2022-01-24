@@ -36,7 +36,7 @@ struct Struct {
         *this = rhs;
     }
     Struct& operator=(const Struct& rhs);
-    const Struct& operator[](std::string name) const;
+    std::shared_ptr<Struct> operator[](std::string name) const;
 
     bool is_fundamental() const {
         return !is_void && members.size() == 0;
@@ -46,7 +46,7 @@ struct Struct {
     bool is_void = false;
 
     float value = 0.0f;
-    std::map<std::string, Struct> members;
+    std::map<std::string, std::shared_ptr<Struct>> members;
 };
 
 struct Statement;
@@ -166,20 +166,21 @@ struct StructDecl {
 
 struct Scope {
     Scope() {
-        types["int"] = Struct(0);
-        types["float"] = Struct(0.0f);
+        types["bool"] = std::make_shared<Struct>(Struct(0));
+        types["int"] = std::make_shared<Struct>(Struct(0));
+        types["float"] = std::make_shared<Struct>(Struct(0.0f));
     }
     void execute();
 
-    Struct* search_variable(std::string name);
-    Struct declare_varible(std::string type, std::string name);
+    std::shared_ptr<Struct> search_variable(std::string name);
+    std::shared_ptr<Struct> declare_varible(std::string type, std::string name);
 
     std::shared_ptr<Scope> parent_scope;
 
     std::vector<Statement> statements;
 
-    std::map<std::string, Struct> types;
-    std::map<std::string, Struct> variables;
+    std::map<std::string, std::shared_ptr<Struct>> types;
+    std::map<std::string, std::shared_ptr<Struct>> variables;
 };
 
 ////////////////////////////////////////////////
@@ -233,6 +234,7 @@ struct Identifier : Elementary {
     virtual ReturnType execute(Scope& scope) const override;
 
     std::string name;
+    std::shared_ptr<Struct> ptr;
 };
 
 struct Type : Elementary {
@@ -252,7 +254,7 @@ struct Assign : BinaryOp {
     virtual std::vector<int> construct(Scope&, const ElementaryGroup& eg, int index) override;
     virtual ReturnType execute(Scope& scope) const override;
 
-    std::string variable_name;
+    std::shared_ptr<Struct> lvalue;
     std::shared_ptr<Expression> expression;
 };
 
@@ -325,7 +327,7 @@ struct Increment : Elementary {
     virtual ReturnType execute(Scope& scope) const override;
 
     bool is_post_increment = false;
-    std::string variable_name;
+    std::shared_ptr<Struct> variable;
 };
 struct Decrement : Elementary {
     using Elementary::Elementary;
@@ -334,16 +336,13 @@ struct Decrement : Elementary {
     virtual ReturnType execute(Scope& scope) const override;
 
     bool is_post_decrement = false;
-    std::string variable_name;
+    std::shared_ptr<Struct> variable;
 };
 struct MemberAccess : Elementary {
     using Elementary::Elementary;
 
     virtual std::vector<int> construct(Scope&, const ElementaryGroup& eg, int index) override;
     virtual ReturnType execute(Scope& scope) const override;
-
-    std::string variable_name;
-    std::string field_name;
 };
 
 ////////////////////////////////////////////////

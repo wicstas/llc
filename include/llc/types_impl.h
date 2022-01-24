@@ -10,11 +10,11 @@ Struct& Struct::operator=(const Struct& rhs) {
         fatal("cannot copy from void");
     id = rhs.id;
     value = rhs.value;
-    members = rhs.members;
+    for (const auto& member : rhs.members)
+        members[member.first] = std::make_shared<Struct>(*member.second);
     return *this;
 }
-
-const Struct& Struct::operator[](std::string name) const {
+std::shared_ptr<Struct> Struct::operator[](std::string name) const {
     auto iter = members.find(name);
     if (iter == members.end())
         fatal(id, " does not have a member named ", name);
@@ -25,11 +25,11 @@ std::vector<int> StructDecl::construct(Scope& scope, const StatementGroup& sg, i
     LLC_CHECK(sg[index + 1].is_expression());
     LLC_CHECK(sg[index + 2].is_scope());
     Identifier* identifier = dynamic_cast<Identifier*>(sg[index + 1].expression.get());
-    LLC_CHECK(identifier != nullptr);
-    Struct new_struct;
-    new_struct.id = identifier->name;
+
+    std::shared_ptr<Struct> new_struct = std::make_shared<Struct>();
+    new_struct->id = identifier->name;
     for (const auto& variable : sg[index + 2].scope->variables)
-        new_struct.members[variable.first] = variable.second;
+        new_struct->members[variable.first] = variable.second;
     scope.types[identifier->name] = new_struct;
     return {index, index + 1, index + 2};
 }
@@ -46,29 +46,27 @@ void Scope::execute() {
             statement.scope->execute();
     }
 }
-
-Struct* Scope::search_variable(std::string name) {
+std::shared_ptr<Struct> Scope::search_variable(std::string name) {
     auto iter = variables.find(name);
     if (iter != variables.end())
-        return &iter->second;
+        return iter->second;
     else if (parent_scope)
         return parent_scope->search_variable(name);
     else
         return nullptr;
 }
-
-Struct Scope::declare_varible(std::string type, std::string name) {
-    auto iter = types.find(type);
-    if (iter != types.end()) {
+std::shared_ptr<Struct> Scope::declare_varible(std::string type, std::string name) {
+    auto type_iter = types.find(type);
+    if (type_iter != types.end()) {
         if (variables.find(name) != variables.end())
             fatal("variable \"" + name + "\" is already declared at this scope");
-        variables[name] = iter->second;
-        return iter->second;
+        auto variable = variables[name] = std::make_shared<Struct>(*type_iter->second);
+        return variable;
     } else if (parent_scope)
         return parent_scope->declare_varible(type, name);
     else {
         fatal("cannot find type \"", type, "\"");
-        return {};
+        return nullptr;
     }
 }
 
@@ -92,7 +90,7 @@ Elementary* Elementary::create(Token token, int bias) {
         ptr = new Type(token.identifier, 10 + bias, token.line, token.column);
         break;
     case TokenType::Assign: ptr = new Assign(0 + bias, token.line, token.column); break;
-    case TokenType::Dot: ptr = new MemberAccess(11 + bias, token.line, token.column); break;
+    case TokenType::Dot: ptr = new MemberAccess(10 + bias, token.line, token.column); break;
     case TokenType::GreaterThan: ptr = new GreaterThan(2 + bias, token.line, token.column); break;
     case TokenType::GreaterEqual: ptr = new GreaterEqual(2 + bias, token.line, token.column); break;
     case TokenType::LessThan: ptr = new LessThan(2 + bias, token.line, token.column); break;
@@ -130,18 +128,14 @@ std::vector<int> BinaryOp::construct(Scope&, const ElementaryGroup& eg, int inde
 }
 
 std::vector<int> Identifier::construct(Scope& scope, const ElementaryGroup&, int) {
-    if (scope.search_variable(name) == nullptr)
+    if (!ptr)
+        ptr = scope.search_variable(name);
+    if (ptr == nullptr)
         throw_error("syntax error: variable can only be constructed by type");
     return {};
 }
-
-ReturnType Identifier::execute(Scope& scope) const {
-    Struct* value = scope.search_variable(name);
-    if (value == nullptr)
-        throw_error("variable \"" + name + "\" is not declared");
-    if (value->is_void)
-        throw_error("variable \"" + name + "\" is void");
-    return *value;
+ReturnType Identifier::execute(Scope&) const {
+    return *ptr;
 }
 
 std::vector<int> Type::construct(Scope& scope, const ElementaryGroup& eg, int index) {
@@ -153,7 +147,6 @@ std::vector<int> Type::construct(Scope& scope, const ElementaryGroup& eg, int in
     scope.declare_varible(type_name, variable->name);
     return {index};
 }
-
 ReturnType Type::execute(Scope&) const {
     throw_error("\"type\" is not executable");
     return {};
@@ -165,16 +158,15 @@ std::vector<int> Assign::construct(Scope&, const ElementaryGroup& eg, int index)
     expression = eg[index + 1];
     Identifier* variable = dynamic_cast<Identifier*>(eg[index - 1].get());
     LLC_INVOKE_IF(variable == nullptr, throw_error("syntax error: expect variable on lhs"));
-    variable_name = variable->name;
+    lvalue = variable->ptr;
+    LLC_INVOKE_IF(lvalue == nullptr, throw_error("variable is uninitialized"));
     return {index - 1, index + 1};
 }
-
 ReturnType Assign::execute(Scope& scope) const {
-    Struct* value = scope.search_variable(variable_name);
-    LLC_CHECK(value != nullptr);
+    LLC_CHECK(lvalue != nullptr);
     LLC_CHECK(expression != nullptr);
-    *value = expression->execute(scope);
-    return *value;
+    *lvalue = expression->execute(scope);
+    return *lvalue;
 }
 
 ReturnType Add::execute(Scope& scope) const {
@@ -273,57 +265,48 @@ ReturnType NotEqual::execute(Scope& scope) const {
 std::vector<int> Increment::construct(Scope&, const ElementaryGroup& eg, int index) {
     if (index + 1 < (int)eg.size() && dynamic_cast<Identifier*>(eg[index + 1].get())) {
         is_post_increment = true;
-        variable_name = dynamic_cast<Identifier*>(eg[index + 1].get())->name;
+        variable = dynamic_cast<Identifier*>(eg[index + 1].get())->ptr;
         return {index + 1};
     } else if (index - 1 >= 0 && dynamic_cast<Identifier*>(eg[index - 1].get())) {
         is_post_increment = false;
-        variable_name = dynamic_cast<Identifier*>(eg[index - 1].get())->name;
+        variable = dynamic_cast<Identifier*>(eg[index - 1].get())->ptr;
         return {index - 1};
     } else {
         throw_error("missing variable");
         return {};
     }
 }
-ReturnType Increment::execute(Scope& scope) const {
-    Struct* object = scope.search_variable(variable_name);
-    if (object == nullptr)
-        throw_error("cannot find variable of name \"" + variable_name + "\"");
-    return is_post_increment ? (object->value)++ : ++(object->value);
+ReturnType Increment::execute(Scope&) const {
+    return is_post_increment ? (variable->value)++ : ++(variable->value);
 }
 
 std::vector<int> Decrement::construct(Scope&, const ElementaryGroup& eg, int index) {
     if (index + 1 < (int)eg.size() && dynamic_cast<Identifier*>(eg[index + 1].get())) {
         is_post_decrement = true;
-        variable_name = dynamic_cast<Identifier*>(eg[index + 1].get())->name;
+        variable = dynamic_cast<Identifier*>(eg[index + 1].get())->ptr;
         return {index + 1};
     } else if (index - 1 >= 0 && dynamic_cast<Identifier*>(eg[index - 1].get())) {
         is_post_decrement = false;
-        variable_name = dynamic_cast<Identifier*>(eg[index - 1].get())->name;
+        variable = dynamic_cast<Identifier*>(eg[index - 1].get())->ptr;
         return {index - 1};
     } else {
         throw_error("missing variable");
         return {};
     }
 }
-ReturnType Decrement::execute(Scope& scope) const {
-    Struct* object = scope.search_variable(variable_name);
-    if (object == nullptr)
-        throw_error("cannot find variable of name \"" + variable_name + "\"");
-    return is_post_decrement ? (object->value)-- : --(object->value);
+ReturnType Decrement::execute(Scope&) const {
+    return is_post_decrement ? (variable->value)-- : --(variable->value);
 }
 
 std::vector<int> MemberAccess::construct(Scope&, const ElementaryGroup& eg, int index) {
     Identifier* identifier = dynamic_cast<Identifier*>(eg[index - 1].get());
     Identifier* field = dynamic_cast<Identifier*>(eg[index + 1].get());
-    LLC_CHECK(identifier != nullptr);
-    variable_name = identifier->name;
-    field_name = field->name;
-    return {index - 1, index + 1};
+    field->ptr = (*identifier->ptr)[field->name];
+    return {index - 1, index};
 }
-ReturnType MemberAccess::execute(Scope& scope) const {
-    Struct* variable = scope.search_variable(variable_name);
-    LLC_CHECK(variable != nullptr);
-    return (*variable)[field_name];
+ReturnType MemberAccess::execute(Scope&) const {
+    throw_error("\".\" is not executable");
+    return {};
 }
 
 ////////////////////////////////////////////////
