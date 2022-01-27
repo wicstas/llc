@@ -166,8 +166,9 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
         } else if (token.type == TokenType::RightParenthese) {
             if (depth == 0)
                 putback();
-            depth--;
-            expression.operands.push_back(std::make_shared<RightParenthese>());
+            else
+                expression.operands.push_back(std::make_shared<RightParenthese>());
+            deprh--; 
             if (depth <= 0)
                 break;
         } else if (token.type == TokenType::Identifier) {
