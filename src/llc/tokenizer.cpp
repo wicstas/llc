@@ -128,11 +128,11 @@ float Tokenizer::scan_value(char c) {
         c = next();
 
         float scale = 0.1f;
-        do {
+        while(is_digit(c)){
             number += (c - '0') * scale;
             scale /= 10.0f;
             c = next();
-        } while (is_digit(c));
+        };
     }
     if (c != 'f')
         putback();
