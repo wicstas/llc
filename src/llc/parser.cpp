@@ -7,8 +7,10 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
     scope->parent = parent;
 
     while (!no_more()) {
-        if (match(TokenType::RightCurlyBracket))
+        if (match(TokenType::RightCurlyBracket)) {
+            putback();
             break;
+        }
         if (auto token = match(TokenType::Identifier)) {
             if (auto type = scope->find_type(token->id)) {
                 putback();
@@ -25,12 +27,37 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                 must_match(TokenType::Semicolon);
 
             } else if (token->id == "if") {
+                std::vector<Expression> expressions;
+                std::vector<std::shared_ptr<Statement>> actions;
                 must_match(TokenType::LeftParenthese);
-                Expression expression = build_expression(scope);
+                expressions.push_back(build_expression(scope));
                 must_match(TokenType::RightParenthese);
                 must_match(TokenType::LeftCurlyBracket);
-                auto sub_scope = parse_recursively(scope);
-                scope->statements.push_back(std::make_shared<If>(expression, sub_scope));
+                actions.push_back(parse_recursively(scope));
+                must_match(TokenType::RightCurlyBracket);
+                while (true) {
+                    auto next1 = advance();
+                    auto next2 = advance();
+                    if (next1.id != "else" || next2.id != "if") {
+                        putback();
+                        putback();
+                        break;
+                    }
+                    must_match(TokenType::LeftParenthese);
+                    expressions.push_back(build_expression(scope));
+                    must_match(TokenType::RightParenthese);
+                    must_match(TokenType::LeftCurlyBracket);
+                    actions.push_back(parse_recursively(scope));
+                    must_match(TokenType::RightCurlyBracket);
+                }
+                if (advance().id != "else") {
+                    putback();
+                } else {
+                    must_match(TokenType::LeftCurlyBracket);
+                    actions.push_back(parse_recursively(scope));
+                    must_match(TokenType::RightCurlyBracket);
+                }
+                scope->statements.push_back(std::make_shared<IfElseChain>(expressions, actions));
 
             } else if (token->id == "for") {
                 must_match(TokenType::LeftParenthese);
@@ -43,6 +70,7 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
 
                 must_match(TokenType::LeftCurlyBracket);
                 auto sub_scope = parse_recursively(scope);
+                must_match(TokenType::RightCurlyBracket);
                 scope->statements.push_back(std::make_shared<For>(condtion, updation, sub_scope));
             } else if (token->id == "while") {
                 must_match(TokenType::LeftParenthese);
@@ -51,6 +79,7 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
 
                 must_match(TokenType::LeftCurlyBracket);
                 auto sub_scope = parse_recursively(scope);
+                must_match(TokenType::RightCurlyBracket);
                 scope->statements.push_back(std::make_shared<While>(condtion, sub_scope));
             } else {
                 fatal("unrecognized token: \"", enum_to_string(token->type), "\":\n",

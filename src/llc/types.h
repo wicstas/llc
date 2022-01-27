@@ -577,17 +577,24 @@ struct Expression : Statement {
     std::vector<std::shared_ptr<Operand>> operands;
 };
 
-struct If : Statement {
-    If(Expression condition, std::shared_ptr<Statement> action)
-        : condition(condition), action(action){};
+struct IfElseChain : Statement {
+    IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Statement>> actions)
+        : conditions(conditions), actions(actions){};
 
     void run(Scope& scope) override {
-        if (condition(scope))
-            action->run(scope);
+        LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
+        for (int i = 0; i < (int)conditions.size(); i++) {
+            if (conditions[i](scope)) {
+                actions[i]->run(scope);
+                return;
+            }
+        }
+        if (conditions.size() == actions.size() - 1)
+            actions.back()->run(scope);
     }
 
-    Expression condition;
-    std::shared_ptr<Statement> action;
+    std::vector<Expression> conditions;
+    std::vector<std::shared_ptr<Statement>> actions;
 };
 
 struct For : Statement {

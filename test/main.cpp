@@ -8,10 +8,14 @@ int main() {
             print(i);
         }
 
-        int i = 0;
-        while(i++ < 20){
-            if(i > 15){
-                print(i);
+        i = 0;
+        while(i++ < 10){
+            if(i < 3){
+                print(i * 10);
+            }else if(i < 6){
+                print(i * 100);
+            }else{
+                print(i * 1000);
             }
         }
     )";
