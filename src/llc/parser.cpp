@@ -170,7 +170,7 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 putback();
             else
                 expression.operands.push_back(std::make_shared<RightParenthese>());
-            deprh--; 
+            depth--; 
             if (depth <= 0)
                 break;
         } else if (token.type == TokenType::Identifier) {

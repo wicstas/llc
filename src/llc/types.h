@@ -70,6 +70,8 @@ struct Token {
     std::string id;
 };
 
+struct Scope;
+
 struct Struct {
     Struct() = default;
     Struct(int valuei) : valuei(valuei){};
@@ -135,8 +137,9 @@ struct Struct {
     bool is_initialized = false;
 };
 
-struct Function{
-
+struct Function {
+    std::vector<std::pair<std::string, Struct>> parameters;
+    std::shared_ptr<Scope> definition;
 };
 
 ////////////////////////////////
@@ -145,7 +148,7 @@ struct Function{
 struct Statement {
     virtual ~Statement() = default;
 
-    virtual void run(struct Scope& scope) = 0;
+    virtual void run(Scope& scope) = 0;
 };
 
 struct Scope : Statement {
@@ -176,6 +179,7 @@ struct Scope : Statement {
     std::shared_ptr<Scope> parent;
     std::vector<std::shared_ptr<Statement>> statements;
     std::map<std::string, Struct> types;
+    std::map<std::string, Function> functions;
     std::map<std::string, std::shared_ptr<Struct>> variables;
 };
 
