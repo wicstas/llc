@@ -135,6 +135,10 @@ struct Struct {
     bool is_initialized = false;
 };
 
+struct Function{
+
+};
+
 ////////////////////////////////
 ////////////////////////////////
 // Statement level

@@ -72,6 +72,7 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                 auto sub_scope = parse_recursively(scope);
                 must_match(TokenType::RightCurlyBracket);
                 scope->statements.push_back(std::make_shared<For>(condtion, updation, sub_scope));
+
             } else if (token->id == "while") {
                 must_match(TokenType::LeftParenthese);
                 Expression condtion = build_expression(scope);
@@ -81,6 +82,7 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                 auto sub_scope = parse_recursively(scope);
                 must_match(TokenType::RightCurlyBracket);
                 scope->statements.push_back(std::make_shared<While>(condtion, sub_scope));
+                
             } else {
                 fatal("unrecognized token: \"", enum_to_string(token->type), "\":\n",
                       token->location(source));
