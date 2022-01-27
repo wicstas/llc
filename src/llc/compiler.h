@@ -7,12 +7,9 @@
 namespace llc {
 
 struct Compiler {
-    void compile(std::string source) {
+    Program compile(std::string source) {
         auto tokens = tokenizer.tokenize(source);
-        parser.parse(std::move(source), std::move(tokens));
-    }
-    void execute() {
-        parser.execute();
+        return parser.parse(source, tokens);
     }
 
   private:
