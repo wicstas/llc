@@ -22,7 +22,7 @@ int main() {
            return 1;
        }
 
-       for(int i = 0; i < 1000; i++){
+       for(int i = 0; i < 100; i++){
            if(is_prime(i)){
                 print(i);
            }
