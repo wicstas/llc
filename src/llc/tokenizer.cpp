@@ -33,12 +33,13 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
     column = 0;
     current_char_offset = 0;
     int start_offset = 0;
+    bool comment = false;
 
     skip(text);
     while (char c = next()) {
         Token token;
         switch (c) {
-        case EOF: break;
+        case EOF: token.type = TokenType::Eof; break;
         case '+':
             if (next() == '+') {
                 token.type = TokenType::Increment;
@@ -56,7 +57,17 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
             }
             break;
         case '*': token.type = TokenType::Star; break;
-        case '/': token.type = TokenType::ForwardSlash; break;
+        case '/':
+            if (next() == '/') {
+                comment = true;
+                while (!is_newline(next())) {
+                }
+                putback();
+            } else {
+                token.type = TokenType::ForwardSlash;
+                putback();
+            }
+            break;
         case '(': token.type = TokenType::LeftParenthese; break;
         case ')': token.type = TokenType::RightParenthese; break;
         case '{': token.type = TokenType::LeftCurlyBracket; break;
@@ -107,12 +118,24 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
             break;
         }
 
-        int length = current_char_offset - start_offset;
-        token.location = Location(line, column - length, length);
-        tokens.push_back(token);
+        if (!comment) {
+            int length = current_char_offset - start_offset;
+            token.location = Location(line, column - length, length);
+            tokens.push_back(token);
+        }
+        comment = false;
+
+        if (tokens.back().type == TokenType::Eof)
+            break;
 
         skip(text);
         start_offset = current_char_offset;
+    }
+
+    if (tokens.back().type != TokenType::Eof) {
+        Token token;
+        token.type = TokenType::Eof;
+        tokens.push_back(token);
     }
 
     return tokens;
@@ -129,7 +152,7 @@ float Tokenizer::scan_value(char c) {
         c = next();
 
         float scale = 0.1f;
-        while(is_digit(c)){
+        while (is_digit(c)) {
             number += (c - '0') * scale;
             scale /= 10.0f;
             c = next();

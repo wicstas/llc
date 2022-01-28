@@ -33,6 +33,10 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope) {
                 scope->statements.push_back(
                     std::make_shared<FunctionCall>(build_functioncall(scope)));
 
+            } else if (token->id == "return") {
+                scope->statements.push_back(std::make_shared<Return>(build_expression(scope)));
+                must_match(TokenType::Semicolon);
+
             } else if (token->id == "print") {
                 must_match(TokenType::LeftParenthese);
                 scope->statements.push_back(std::make_shared<Print>(build_expression(scope)));
@@ -103,7 +107,11 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope) {
         } else if (auto token = match(TokenType::Semicolon)) {
             continue;
 
+        } else if (auto token = match(TokenType::Eof)) {
+            break;
+
         } else {
+            token = advance();
             fatal("unrecognized token: \"", enum_to_string(token->type), "\":\n",
                   token->location(source));
         }
@@ -176,7 +184,9 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
     while (true) {
         auto token = advance();
 
-        if (token.type == TokenType::Semicolon || token.type == TokenType::Comma) {
+        LLC_CHECK(token.type != TokenType::Invalid);
+        if (token.type == TokenType::Eof || token.type == TokenType::Semicolon ||
+            token.type == TokenType::Comma) {
             putback();
             break;
         }
@@ -216,16 +226,22 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             depth++;
             expression.operands.push_back(std::make_shared<LeftParenthese>());
         } else if (token.type == TokenType::RightParenthese) {
-            if (depth == 0)
+            if (depth == 0) {
                 putback();
-            else
-                expression.operands.push_back(std::make_shared<RightParenthese>());
-            depth--;
-            if (depth <= 0)
                 break;
+            } else {
+                expression.operands.push_back(std::make_shared<RightParenthese>());
+                depth--;
+            }
         } else if (token.type == TokenType::Identifier) {
-            must_has(scope->find_variable(token.id), token);
-            expression.operands.push_back(std::make_shared<VariableOp>(token.id));
+            if (scope->find_variable(token.id))
+                expression.operands.push_back(std::make_shared<VariableOp>(token.id));
+            else {
+                must_has(scope->find_function(token.id), token);
+                putback();
+                expression.operands.push_back(
+                    std::make_shared<FunctionCallOp>(build_functioncall(scope)));
+            }
         } else {
             fatal("unrecognized operand \"", enum_to_string(token.type), "\":\n",
                   token.location(source));

@@ -53,14 +53,15 @@ enum class TokenType {
     Assign,
     Exclaimation,
     Invalid,
+    Eof,
     NumTokens
 };
 
 inline std::string enum_to_string(TokenType type) {
     static const char* map[] = {
-        "number", "++", "--", "+",          "-", "*",       "/",         "(",  ")",
-        "{",      "}",  ";",  "identifier", ".", ",",       "<",         "<=", ">",
-        ">=",     "==", "!=", "=",          "!", "invalid", "num_tokens"};
+        "number", "++", "--", "+",          "-", "*",       "/",   "(",         ")",
+        "{",      "}",  ";",  "identifier", ".", ",",       "<",   "<=",        ">",
+        ">=",     "==", "!=", "=",          "!", "invalid", "eof", "num_tokens"};
     return map[(int)type];
 }
 
@@ -136,6 +137,7 @@ struct Struct {
         return (bool)valuei;
     }
 
+    bool is_return = false;
     int valuei = 0;
 };
 
@@ -147,9 +149,6 @@ struct Function {
     std::vector<std::string> parameters;
 };
 
-////////////////////////////////
-////////////////////////////////
-// Statement level
 struct Statement {
     virtual ~Statement() = default;
 
@@ -162,11 +161,7 @@ struct Scope : Statement {
         types["void"] = {};
     }
 
-    Struct run(Scope&) {
-        for (const auto& statement : statements)
-            statement->run(*this);
-        return {};
-    }
+    Struct run(Scope& scope);
 
     std::optional<Struct> find_type(std::string name) const {
         auto it = types.find(name);
@@ -201,18 +196,15 @@ struct Scope : Statement {
     std::map<std::string, std::shared_ptr<Function>> functions;
 };
 
-////////////////////////////////
-////////////////////////////////
-// Expression level
 struct Operand {
     virtual ~Operand() = default;
 
     virtual std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
                                       int index) = 0;
 
-    virtual Struct evaluate(const Scope& scope) const = 0;
+    virtual Struct evaluate(Scope& scope) = 0;
 
-    virtual Struct assign(const Scope&, const Struct&) {
+    virtual Struct assign(Scope&, const Struct&) {
         fatal("Operand::assign shall not be called");
         return {};
     }
@@ -259,7 +251,7 @@ struct NumberLiteral : Operand {
         return {};
     }
 
-    Struct evaluate(const Scope&) const override {
+    Struct evaluate(Scope&) override {
         return value;
     }
 
@@ -281,7 +273,7 @@ struct VariableOp : Operand {
         return {};
     }
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return *scope.find_variable(name);
     }
 
@@ -292,7 +284,7 @@ struct VariableOp : Operand {
         precedence = prec;
     }
 
-    Struct assign(const Scope& scope, const Struct& value) override {
+    Struct assign(Scope& scope, const Struct& value) override {
         return *scope.find_variable(name) = value;
     }
 
@@ -303,7 +295,7 @@ struct VariableOp : Operand {
 struct Assignment : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->assign(scope, b->evaluate(scope));
     }
 
@@ -319,7 +311,7 @@ struct Assignment : BinaryOp {
 struct Addition : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) + b->evaluate(scope);
     }
 
@@ -336,7 +328,7 @@ struct Addition : BinaryOp {
 struct Subtraction : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) - b->evaluate(scope);
     }
 
@@ -353,7 +345,7 @@ struct Subtraction : BinaryOp {
 struct Multiplication : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) * b->evaluate(scope);
     }
 
@@ -369,7 +361,7 @@ struct Multiplication : BinaryOp {
 struct Division : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) / b->evaluate(scope);
     }
 
@@ -385,7 +377,7 @@ struct Division : BinaryOp {
 struct PostIncrement : PostUnaryOp {
     using PostUnaryOp::PostUnaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         auto old = operand->evaluate(scope);
         operand->assign(scope, ++operand->evaluate(scope));
         return old;
@@ -404,7 +396,7 @@ struct PostIncrement : PostUnaryOp {
 struct PostDecrement : PostUnaryOp {
     using PostUnaryOp::PostUnaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         auto old = operand->evaluate(scope);
         operand->assign(scope, --operand->evaluate(scope));
         return old;
@@ -423,7 +415,7 @@ struct PostDecrement : PostUnaryOp {
 struct PreIncrement : PreUnaryOp {
     using PreUnaryOp::PreUnaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return operand->assign(scope, ++operand->evaluate(scope));
     }
 
@@ -440,7 +432,7 @@ struct PreIncrement : PreUnaryOp {
 struct PreDecrement : PreUnaryOp {
     using PreUnaryOp::PreUnaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return operand->assign(scope, --operand->evaluate(scope));
     }
 
@@ -457,7 +449,7 @@ struct PreDecrement : PreUnaryOp {
 struct LessThan : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) < b->evaluate(scope);
     }
 
@@ -473,7 +465,7 @@ struct LessThan : BinaryOp {
 struct LessEqual : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) <= b->evaluate(scope);
     }
 
@@ -489,7 +481,7 @@ struct LessEqual : BinaryOp {
 struct GreaterThan : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) > b->evaluate(scope);
     }
 
@@ -505,7 +497,7 @@ struct GreaterThan : BinaryOp {
 struct GreaterEqual : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) >= b->evaluate(scope);
     }
 
@@ -521,7 +513,7 @@ struct GreaterEqual : BinaryOp {
 struct Equal : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) == b->evaluate(scope);
     }
 
@@ -537,7 +529,7 @@ struct Equal : BinaryOp {
 struct NotEqual : BinaryOp {
     using BinaryOp::BinaryOp;
 
-    Struct evaluate(const Scope& scope) const override {
+    Struct evaluate(Scope& scope) override {
         return a->evaluate(scope) != b->evaluate(scope);
     }
 
@@ -555,7 +547,7 @@ struct LeftParenthese : Operand {
         fatal("LeftParenthese::collapse() shall not be called");
         return {};
     }
-    Struct evaluate(const Scope&) const override {
+    Struct evaluate(Scope&) override {
         fatal("LeftParenthese::evaluate() shall not be called");
         return {};
     }
@@ -572,7 +564,7 @@ struct RightParenthese : Operand {
         fatal("RightParenthese::collapse() shall not be called");
         return {};
     }
-    Struct evaluate(const Scope&) const override {
+    Struct evaluate(Scope&) override {
         fatal("RightParenthese::evaluate() shall not be called");
         return {};
     }
@@ -584,14 +576,11 @@ struct RightParenthese : Operand {
     }
 };
 
-////////////////////////////////
-////////////////////////////////
-// Statement level
 struct Expression : Statement {
     void apply_parenthese();
     void collapse();
 
-    Struct operator()(const Scope& scope) const {
+    Struct operator()(Scope& scope) const {
         LLC_CHECK(operands.size() == 1);
         return operands[0]->evaluate(scope);
     }
@@ -623,20 +612,50 @@ struct FunctionCall : Statement {
     std::vector<Expression> arguments;
 };
 
+struct FunctionCallOp : Operand {
+    FunctionCallOp(FunctionCall function) : function(function){};
+
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
+        return {};
+    }
+
+    Struct evaluate(Scope& scope) override {
+        return function.run(scope);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+
+    int precedence = 10;
+    FunctionCall function;
+};
+
+struct Return : Statement {
+    Return(Expression expression) : expression(expression){};
+
+    Struct run(Scope& scope) override {
+        return expression(scope);
+    }
+
+    Expression expression;
+};
+
 struct IfElseChain : Statement {
     IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Statement>> actions)
         : conditions(conditions), actions(actions){};
 
     Struct run(Scope& scope) override {
         LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
-        for (int i = 0; i < (int)conditions.size(); i++) {
-            if (conditions[i](scope)) {
-                actions[i]->run(scope);
-                return {};
-            }
-        }
+        for (int i = 0; i < (int)conditions.size(); i++)
+            if (conditions[i](scope))
+                return actions[i]->run(scope);
+
         if (conditions.size() == actions.size() - 1)
-            actions.back()->run(scope);
+            return actions.back()->run(scope);
         return {};
     }
 
@@ -649,8 +668,11 @@ struct For : Statement {
         : condition(condition), updation(updation), action(action){};
 
     Struct run(Scope& scope) override {
-        for (; condition(scope); updation(scope))
-            action->run(scope);
+        for (; condition(scope); updation(scope)) {
+            auto result = action->run(scope);
+            if (result.is_return)
+                return result;
+        }
         return {};
     }
 
@@ -663,8 +685,11 @@ struct While : Statement {
         : condition(condition), action(action){};
 
     Struct run(Scope& scope) override {
-        while (condition(scope))
-            action->run(scope);
+        while (condition(scope)) {
+            auto result = action->run(scope);
+            if (result.is_return)
+                return result;
+        }
         return {};
     }
 
@@ -682,6 +707,22 @@ struct Print : Statement {
 
     Expression expression;
 };
+
+inline Struct Scope::run(Scope&) {
+    for (const auto& statement : statements)
+        LLC_CHECK(statement != nullptr);
+
+    for (const auto& statement : statements) {
+        auto result = statement->run(*this);
+        if (result.is_return)
+            return result;
+        else if (dynamic_cast<Return*>(statement.get())) {
+            result.is_return = true;
+            return result;
+        }
+    }
+    return {};
+}
 
 using Program = std::shared_ptr<Scope>;
 
