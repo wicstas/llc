@@ -1,10 +1,10 @@
 BasedOnStyle: Google
 AccessModifierOffset: -2
 IndentCaseLabels: false
-PointerBindsToType: false
+PointerBindsToType: true
 Standard: Cpp11
 IndentWidth: 4
-AllowShortFunctionsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: true
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AllowShortLambdasOnASingleLine: true
@@ -13,5 +13,5 @@ AlwaysBreakBeforeMultilineStrings: false
 IncludeBlocks: Preserve
 AllowAllConstructorInitializersOnNextLine: true
 MaxEmptyLinesToKeep: 1
-ColumnLimit: 100
+ColumnLimit: 110
 SortIncludes: false

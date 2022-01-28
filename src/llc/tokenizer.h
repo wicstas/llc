@@ -12,7 +12,7 @@ struct Tokenizer {
   private:
     char next();
     void putback();
-    
+
     void skip(const char*& ptr);
     float scan_value(char c);
     std::string scan_string(char c);

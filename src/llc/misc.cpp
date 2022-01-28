@@ -11,7 +11,7 @@ std::vector<std::string> separate_lines(const std::string& source) {
     std::string line;
     while (std::getline(stream, line))
         lines.push_back(line);
-        
+
     return lines;
 }
 

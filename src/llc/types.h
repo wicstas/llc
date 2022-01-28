@@ -28,41 +28,50 @@ struct Location {
     int length = -1;
 };
 
-enum class TokenType {
-    Number,
-    Increment,
-    Decrement,
-    Plus,
-    Minus,
-    Star,
-    ForwardSlash,
-    LeftParenthese,
-    RightParenthese,
-    LeftCurlyBracket,
-    RightCurlyBracket,
-    Semicolon,
-    Identifier,
-    Dot,
-    Comma,
-    LessThan,
-    LessEqual,
-    GreaterThan,
-    GreaterEqual,
-    Equal,
-    NotEqual,
-    Assign,
-    Exclaimation,
-    Invalid,
-    Eof,
-    NumTokens
+enum class TokenType : uint64_t {
+    Number = 1ul << 0,
+    Increment = 1ul << 1,
+    Decrement = 1ul << 2,
+    Plus = 1ul << 3,
+    Minus = 1ul << 4,
+    Star = 1ul << 5,
+    ForwardSlash = 1ul << 6,
+    LeftParenthese = 1ul << 7,
+    RightParenthese = 1ul << 8,
+    LeftCurlyBracket = 1ul << 9,
+    RightCurlyBracket = 1ul << 10,
+    Semicolon = 1ul << 11,
+    Identifier = 1ul << 12,
+    Dot = 1ul << 13,
+    Comma = 1ul << 14,
+    LessThan = 1ul << 15,
+    LessEqual = 1ul << 16,
+    GreaterThan = 1ul << 17,
+    GreaterEqual = 1ul << 18,
+    Equal = 1ul << 19,
+    NotEqual = 1ul << 20,
+    Assign = 1ul << 21,
+    Exclaimation = 1ul << 22,
+    Invalid = 1ul << 23,
+    Eof = 1ul << 24,
+    NumTokens = 1ul << 25
 };
 
+inline TokenType operator|(TokenType a, TokenType b) { return (TokenType)((uint64_t)a | (uint64_t)b); }
+inline uint64_t operator&(TokenType a, TokenType b) { return (uint64_t)a & (uint64_t)b; }
+
 inline std::string enum_to_string(TokenType type) {
-    static const char* map[] = {
-        "number", "++", "--", "+",          "-", "*",       "/",   "(",         ")",
-        "{",      "}",  ";",  "identifier", ".", ",",       "<",   "<=",        ">",
-        ">=",     "==", "!=", "=",          "!", "invalid", "eof", "num_tokens"};
-    return map[(int)type];
+    static const char* map[] = {"number", "++", "--", "+",          "-", "*",       "/",   "(",         ")",
+                                "{",      "}",  ";",  "identifier", ".", ",",       "<",   "<=",        ">",
+                                ">=",     "==", "!=", "=",          "!", "invalid", "eof", "num_tokens"};
+    std::string str;
+    for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if ((uint64_t(type) >> i) & 1ul)
+            str += (std::string)map[i] + "|";
+
+    if (str.back() == '|')
+        str.pop_back();
+    return str;
 }
 
 struct Token {
@@ -78,67 +87,54 @@ struct Expression;
 
 struct Struct {
     Struct() = default;
-    Struct(int valuei) : valuei(valuei){};
+    Struct(float value) : value(value){};
 
     friend Struct operator+(Struct a, Struct b) {
-        a.valuei += b.valuei;
+        a.value += b.value;
         return a;
     }
     friend Struct operator-(Struct a, Struct b) {
-        a.valuei -= b.valuei;
+        a.value -= b.value;
         return a;
     }
     friend Struct operator*(Struct a, Struct b) {
-        a.valuei *= b.valuei;
+        a.value *= b.value;
         return a;
     }
     friend Struct operator/(Struct a, Struct b) {
-        a.valuei /= b.valuei;
+        a.value /= b.value;
         return a;
     }
-    friend bool operator<(Struct a, Struct b) {
-        return a.valuei < b.valuei;
-    }
-    friend bool operator<=(Struct a, Struct b) {
-        return a.valuei <= b.valuei;
-    }
-    friend bool operator>(Struct a, Struct b) {
-        return a.valuei > b.valuei;
-    }
-    friend bool operator>=(Struct a, Struct b) {
-        return a.valuei >= b.valuei;
-    }
-    friend bool operator==(Struct a, Struct b) {
-        return a.valuei == b.valuei;
-    }
-    friend bool operator!=(Struct a, Struct b) {
-        return a.valuei != b.valuei;
-    }
+    friend bool operator<(Struct a, Struct b) { return a.value < b.value; }
+    friend bool operator<=(Struct a, Struct b) { return a.value <= b.value; }
+    friend bool operator>(Struct a, Struct b) { return a.value > b.value; }
+    friend bool operator>=(Struct a, Struct b) { return a.value >= b.value; }
+    friend bool operator==(Struct a, Struct b) { return a.value == b.value; }
+    friend bool operator!=(Struct a, Struct b) { return a.value != b.value; }
     Struct operator++() {
-        valuei++;
+        value++;
         return *this;
     }
     Struct operator--() {
-        valuei--;
+        value--;
         return *this;
     }
     Struct operator++(int) {
         auto temp = *this;
-        valuei++;
+        value++;
         return temp;
     }
     Struct operator--(int) {
         auto temp = *this;
-        valuei--;
+        value--;
         return temp;
     }
 
-    operator bool() const {
-        return (bool)valuei;
-    }
+    operator bool() const { return (bool)value; }
 
     bool is_return = false;
-    int valuei = 0;
+    float value = 0.0f;
+    std::map<std::string, std::shared_ptr<Struct>> members;
 };
 
 struct Function {
@@ -174,8 +170,7 @@ struct Scope : Statement {
 struct Operand {
     virtual ~Operand() = default;
 
-    virtual std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
-                                      int index) = 0;
+    virtual std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) = 0;
 
     virtual Struct evaluate(Scope& scope) = 0;
 
@@ -189,8 +184,7 @@ struct Operand {
 };
 
 struct BinaryOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
-                              int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
         a = operands[index - 1];
         b = operands[index + 1];
         return {index - 1, index + 1};
@@ -200,8 +194,7 @@ struct BinaryOp : Operand {
 };
 
 struct PreUnaryOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
-                              int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
         operand = operands[index + 1];
         return {index + 1};
     }
@@ -210,8 +203,7 @@ struct PreUnaryOp : Operand {
 };
 
 struct PostUnaryOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
-                              int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
         operand = operands[index - 1];
         return {index - 1};
     }
@@ -220,300 +212,225 @@ struct PostUnaryOp : Operand {
 };
 
 struct NumberLiteral : Operand {
-    NumberLiteral(int value) : value(value){};
+    NumberLiteral(float value) : value(value){};
 
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
-        return {};
-    }
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; }
 
-    Struct evaluate(Scope&) override {
-        return value;
-    }
+    Struct evaluate(Scope&) override { return value; }
 
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 10;
-    int value;
+    float value;
 };
 
-struct VariableOp : Operand {
+struct Assignable {
+    virtual std::shared_ptr<Struct> get(Scope& scope) const = 0;
+};
+
+struct VariableOp : Operand, Assignable {
     VariableOp(std::string name) : name(name){};
 
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
-        return {};
-    }
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; }
 
-    Struct evaluate(Scope& scope) override {
-        return *scope.find_variable(name);
-    }
+    Struct evaluate(Scope& scope) override { return *scope.find_variable(name); }
 
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
-    Struct assign(Scope& scope, const Struct& value) override {
-        return *scope.find_variable(name) = value;
-    }
+    Struct assign(Scope& scope, const Struct& value) override { return *scope.find_variable(name) = value; }
+    std::shared_ptr<Struct> get(Scope& scope) const override { return scope.find_variable(name); }
 
     int precedence = 10;
     std::string name;
 };
 
-struct Assignment : BinaryOp {
-    using BinaryOp::BinaryOp;
+struct StructMember : Operand {
+    StructMember(std::string name) : name(name){};
+
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
+        fatal("StructMember::collapse() shall not be called");
+        return {};
+    }
+    Struct evaluate(Scope&) override {
+        fatal("StructMember::evaluate() shall not be called");
+        return {};
+    }
+    int get_precedence() const override { return 0; }
+    void set_precedence(int) override {}
+
+    std::string name;
+};
+
+struct MemberAccess : BinaryOp, Assignable {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        a = operands[index - 1];
+        b = operands[index + 1];
+        return {index - 1, index + 1};
+    }
 
     Struct evaluate(Scope& scope) override {
-        return a->assign(scope, b->evaluate(scope));
+        auto variable = dynamic_cast<Assignable*>(a.get());
+        auto member = dynamic_cast<StructMember*>(b.get());
+        LLC_CHECK(variable != nullptr);
+        LLC_CHECK(member != nullptr);
+        LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
+        return *variable->get(scope)->members[member->name];
+    }
+    Struct assign(Scope& scope, const Struct& value) override {
+        auto variable = dynamic_cast<Assignable*>(a.get());
+        auto member = dynamic_cast<StructMember*>(b.get());
+        LLC_CHECK(variable != nullptr);
+        LLC_CHECK(member != nullptr);
+        LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
+        return *variable->get(scope)->members[member->name] = value;
+    }
+    std::shared_ptr<Struct> get(Scope& scope) const override {
+        auto variable = dynamic_cast<Assignable*>(a.get());
+        auto member = dynamic_cast<StructMember*>(b.get());
+        LLC_CHECK(variable != nullptr);
+        LLC_CHECK(member != nullptr);
+        LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
+        return variable->get(scope)->members[member->name];
     }
 
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+    int precedence = 8;
+};
+
+struct Assignment : BinaryOp {
+    Struct evaluate(Scope& scope) override { return a->assign(scope, b->evaluate(scope)); }
+
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 0;
 };
 
 struct Addition : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) + b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) + b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 4;
 };
 
 struct Subtraction : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) - b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) - b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 4;
 };
 
 struct Multiplication : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) * b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) * b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 5;
 };
 
 struct Division : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) / b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) / b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 5;
 };
 
 struct PostIncrement : PostUnaryOp {
-    using PostUnaryOp::PostUnaryOp;
-
     Struct evaluate(Scope& scope) override {
         auto old = operand->evaluate(scope);
         operand->assign(scope, ++operand->evaluate(scope));
         return old;
     }
 
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 8;
 };
 
 struct PostDecrement : PostUnaryOp {
-    using PostUnaryOp::PostUnaryOp;
-
     Struct evaluate(Scope& scope) override {
         auto old = operand->evaluate(scope);
         operand->assign(scope, --operand->evaluate(scope));
         return old;
     }
 
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 8;
 };
 
 struct PreIncrement : PreUnaryOp {
-    using PreUnaryOp::PreUnaryOp;
+    Struct evaluate(Scope& scope) override { return operand->assign(scope, ++operand->evaluate(scope)); }
 
-    Struct evaluate(Scope& scope) override {
-        return operand->assign(scope, ++operand->evaluate(scope));
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 8;
 };
 
 struct PreDecrement : PreUnaryOp {
-    using PreUnaryOp::PreUnaryOp;
+    Struct evaluate(Scope& scope) override { return operand->assign(scope, --operand->evaluate(scope)); }
 
-    Struct evaluate(Scope& scope) override {
-        return operand->assign(scope, --operand->evaluate(scope));
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 8;
 };
 
 struct LessThan : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) < b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) < b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 2;
 };
 
 struct LessEqual : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) <= b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) <= b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 2;
 };
 
 struct GreaterThan : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) > b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) > b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 2;
 };
 
 struct GreaterEqual : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) >= b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) >= b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 2;
 };
 
 struct Equal : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) == b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) == b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 2;
 };
 
 struct NotEqual : BinaryOp {
-    using BinaryOp::BinaryOp;
+    Struct evaluate(Scope& scope) override { return a->evaluate(scope) != b->evaluate(scope); }
 
-    Struct evaluate(Scope& scope) override {
-        return a->evaluate(scope) != b->evaluate(scope);
-    }
-
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
     int precedence = 2;
 };
 
@@ -526,12 +443,8 @@ struct LeftParenthese : Operand {
         fatal("LeftParenthese::evaluate() shall not be called");
         return {};
     }
-    int get_precedence() const override {
-        return 0;
-    }
-    void set_precedence(int) override {
-        fatal("LeftParenthese::set_precedence() shall not be called");
-    }
+    int get_precedence() const override { return 0; }
+    void set_precedence(int) override {}
 };
 
 struct RightParenthese : Operand {
@@ -543,12 +456,8 @@ struct RightParenthese : Operand {
         fatal("RightParenthese::evaluate() shall not be called");
         return {};
     }
-    int get_precedence() const override {
-        return 0;
-    }
-    void set_precedence(int) override {
-        fatal("RightParenthese::set_precedence() shall not be called");
-    }
+    int get_precedence() const override { return 0; }
+    void set_precedence(int) override {}
 };
 
 struct Expression : Statement {
@@ -560,9 +469,7 @@ struct Expression : Statement {
         return operands[0]->evaluate(scope);
     }
 
-    Struct run(Scope& scope) override {
-        return this->operator()(scope);
-    }
+    Struct run(Scope& scope) override { return this->operator()(scope); }
 
     std::vector<std::shared_ptr<Operand>> operands;
 };
@@ -580,20 +487,12 @@ struct FunctionCall : Statement {
 struct FunctionCallOp : Operand {
     FunctionCallOp(FunctionCall function) : function(function){};
 
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
-        return {};
-    }
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; }
 
-    Struct evaluate(Scope& scope) override {
-        return function.run(scope);
-    }
+    Struct evaluate(Scope& scope) override { return function.run(scope); }
 
-    int get_precedence() const override {
-        return precedence;
-    }
-    void set_precedence(int prec) override {
-        precedence = prec;
-    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
 
     int precedence = 10;
     FunctionCall function;
@@ -602,9 +501,7 @@ struct FunctionCallOp : Operand {
 struct Return : Statement {
     Return(Expression expression) : expression(expression){};
 
-    Struct run(Scope& scope) override {
-        return expression(scope);
-    }
+    Struct run(Scope& scope) override { return expression(scope); }
 
     Expression expression;
 };
@@ -630,8 +527,7 @@ struct For : Statement {
 };
 
 struct While : Statement {
-    While(Expression condition, std::shared_ptr<Statement> action)
-        : condition(condition), action(action){};
+    While(Expression condition, std::shared_ptr<Statement> action) : condition(condition), action(action){};
 
     Struct run(Scope& scope) override;
 

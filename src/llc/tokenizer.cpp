@@ -2,18 +2,10 @@
 
 namespace llc {
 
-static inline bool is_digit(char c) {
-    return '0' <= c && c <= '9';
-}
-static inline bool is_space(char c) {
-    return c == ' ' || c == '\t' || c == '\f';
-}
-static inline bool is_newline(char c) {
-    return c == '\n' || c == '\r';
-}
-static inline bool is_alpha(char c) {
-    return c >= 'A' && c <= 'z';
-}
+static inline bool is_digit(char c) { return '0' <= c && c <= '9'; }
+static inline bool is_space(char c) { return c == ' ' || c == '\t' || c == '\f'; }
+static inline bool is_newline(char c) { return c == '\n' || c == '\r'; }
+static inline bool is_alpha(char c) { return c >= 'A' && c <= 'z'; }
 
 char Tokenizer::next() {
     current_char_offset++;

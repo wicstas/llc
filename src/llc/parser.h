@@ -19,6 +19,7 @@ struct Parser {
     }
 
     void parse_recursively(std::shared_ptr<Scope> scope);
+
     std::shared_ptr<Scope> parse_recursively_topdown(std::shared_ptr<Scope> parent) {
         std::shared_ptr<Scope> scope = std::make_shared<Scope>();
         scope->parent = parent;
@@ -28,13 +29,13 @@ struct Parser {
 
     void declare_variable(std::shared_ptr<Scope> scope);
     void declare_function(std::shared_ptr<Scope> scope);
+    void declare_struct(std::shared_ptr<Scope> scope);
     FunctionCall build_functioncall(std::shared_ptr<Scope> scope);
     Expression build_expression(std::shared_ptr<Scope> scope);
 
     std::optional<Token> match(TokenType type);
-    std::optional<Token> detect(TokenType type);
     Token must_match(TokenType type);
-    
+
     template <typename T>
     T must_has(T value, Token token) {
         if (!value)
@@ -43,6 +44,7 @@ struct Parser {
     }
 
     void putback() {
+        LLC_CHECK(pos != 0);
         pos--;
     }
     Token advance() {
@@ -51,7 +53,8 @@ struct Parser {
     }
 
     bool no_more() const {
-        return pos >= tokens.size();
+        LLC_CHECK(pos <= tokens.size());
+        return pos == tokens.size();
     }
 
     std::string source;
