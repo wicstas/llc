@@ -5,9 +5,9 @@
 namespace llc {
 
 std::string Location::operator()(const std::string& source) {
-    LLC_CHECK(line != -1);
-    LLC_CHECK(column != -1);
-    LLC_CHECK(length != 0);
+    LLC_CHECK(line >= 0);
+    LLC_CHECK(column >= 0);
+    LLC_CHECK(length > 0);
     std::vector<std::string> lines = separate_lines(source);
 
     std::string pos = std::to_string(line) + ':' + std::to_string(column) + ':';
@@ -56,7 +56,7 @@ std::shared_ptr<Struct> Scope::find_variable(std::string name) const {
         return parent ? parent->find_variable(name) : nullptr;
     else {
         if (it->second == nullptr)
-            fatal("cannot find variable \"", name, "\"", " definition");
+            fatal("cannot find definition of variable \"", name, "\"");
         return it->second;
     }
 }
@@ -72,6 +72,9 @@ std::shared_ptr<Function> Scope::find_function(std::string name) const {
 Struct Function::run(Scope& scope, std::vector<Expression> args) const {
     LLC_CHECK(parameters.size() == args.size());
     LLC_CHECK(definition != nullptr);
+
+    for (int i = 0; i < (int)args.size(); i++)
+        LLC_CHECK(definition->variables.find(parameters[i]) != definition->variables.end());
 
     for (int i = 0; i < (int)args.size(); i++)
         definition->variables[parameters[i]] = std::make_shared<Struct>(args[i](scope));
@@ -129,6 +132,9 @@ void Expression::collapse() {
 
 Struct IfElseChain::run(Scope& scope) {
     LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
+    for (int i = 0; i < (int)actions.size(); i++)
+        LLC_CHECK(actions[i] != nullptr);
+
     for (int i = 0; i < (int)conditions.size(); i++)
         if (conditions[i](scope))
             return actions[i]->run(scope);
@@ -139,8 +145,10 @@ Struct IfElseChain::run(Scope& scope) {
 }
 
 Struct For::run(Scope& scope) {
-    for (; condition(scope); updation(scope)) {
+    LLC_CHECK(action != nullptr);
+    for (; condition(*internal_scope); updation(*internal_scope)) {
         auto result = action->run(scope);
+
         if (result.is_return)
             return result;
     }
@@ -148,6 +156,8 @@ Struct For::run(Scope& scope) {
 }
 
 Struct While::run(Scope& scope) {
+    LLC_CHECK(action != nullptr);
+
     while (condition(scope)) {
         auto result = action->run(scope);
         if (result.is_return)

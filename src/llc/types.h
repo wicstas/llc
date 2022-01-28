@@ -185,6 +185,8 @@ struct Operand {
 
 struct BinaryOp : Operand {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        LLC_CHECK(index - 1 >= 0);
+        LLC_CHECK(index + 1 < (int)operands.size());
         a = operands[index - 1];
         b = operands[index + 1];
         return {index - 1, index + 1};
@@ -195,6 +197,8 @@ struct BinaryOp : Operand {
 
 struct PreUnaryOp : Operand {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        LLC_CHECK(index + 1 >= 0);
+        LLC_CHECK(index + 1 < (int)operands.size());
         operand = operands[index + 1];
         return {index + 1};
     }
@@ -204,6 +208,8 @@ struct PreUnaryOp : Operand {
 
 struct PostUnaryOp : Operand {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        LLC_CHECK(index - 1 >= 0);
+        LLC_CHECK(index - 1 < (int)operands.size());
         operand = operands[index - 1];
         return {index - 1};
     }
@@ -234,13 +240,28 @@ struct VariableOp : Operand, Assignable {
 
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; }
 
-    Struct evaluate(Scope& scope) override { return *scope.find_variable(name); }
+    Struct evaluate(Scope& scope) override {
+        if (auto var = scope.find_variable(name))
+            return *var;
+        LLC_CHECK(false);
+        return {};
+    }
 
     int get_precedence() const override { return precedence; }
     void set_precedence(int prec) override { precedence = prec; }
 
-    Struct assign(Scope& scope, const Struct& value) override { return *scope.find_variable(name) = value; }
-    std::shared_ptr<Struct> get(Scope& scope) const override { return scope.find_variable(name); }
+    Struct assign(Scope& scope, const Struct& value) override {
+        if (auto var = scope.find_variable(name))
+            return *var = value;
+        LLC_CHECK(false);
+        return {};
+    }
+    std::shared_ptr<Struct> get(Scope& scope) const override {
+        if (auto var = scope.find_variable(name))
+            return var;
+        LLC_CHECK(false);
+        return nullptr;
+    }
 
     int precedence = 10;
     std::string name;
@@ -265,6 +286,8 @@ struct StructMember : Operand {
 
 struct MemberAccess : BinaryOp, Assignable {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        LLC_CHECK(index - 1 >= 0);
+        LLC_CHECK(index + 1 < (int)operands.size());
         a = operands[index - 1];
         b = operands[index + 1];
         return {index - 1, index + 1};
@@ -465,6 +488,8 @@ struct Expression : Statement {
     void collapse();
 
     Struct operator()(Scope& scope) const {
+        if (operands.size() == 0)
+            return {};
         LLC_CHECK(operands.size() == 1);
         return operands[0]->evaluate(scope);
     }
@@ -507,32 +532,33 @@ struct Return : Statement {
 };
 
 struct IfElseChain : Statement {
-    IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Statement>> actions)
+    IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Scope>> actions)
         : conditions(conditions), actions(actions){};
 
     Struct run(Scope& scope) override;
 
     std::vector<Expression> conditions;
-    std::vector<std::shared_ptr<Statement>> actions;
+    std::vector<std::shared_ptr<Scope>> actions;
 };
 
 struct For : Statement {
-    For(Expression condition, Expression updation, std::shared_ptr<Statement> action)
-        : condition(condition), updation(updation), action(action){};
+    For(Expression condition, Expression updation, std::shared_ptr<Scope> internal_scope,
+        std::shared_ptr<Scope> action)
+        : condition(condition), updation(updation), internal_scope(internal_scope), action(action){};
 
     Struct run(Scope& scope) override;
 
     Expression condition, updation;
-    std::shared_ptr<Statement> action;
+    std::shared_ptr<Scope> internal_scope, action;
 };
 
 struct While : Statement {
-    While(Expression condition, std::shared_ptr<Statement> action) : condition(condition), action(action){};
+    While(Expression condition, std::shared_ptr<Scope> action) : condition(condition), action(action){};
 
     Struct run(Scope& scope) override;
 
     Expression condition;
-    std::shared_ptr<Statement> action;
+    std::shared_ptr<Scope> action;
 };
 
 struct Print : Statement {

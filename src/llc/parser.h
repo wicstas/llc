@@ -18,12 +18,13 @@ struct Parser {
         return scope;
     }
 
-    void parse_recursively(std::shared_ptr<Scope> scope);
+    void parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_line = false);
 
-    std::shared_ptr<Scope> parse_recursively_topdown(std::shared_ptr<Scope> parent) {
+    std::shared_ptr<Scope> parse_recursively_topdown(std::shared_ptr<Scope> parent,
+                                                     bool end_on_new_line = false) {
         std::shared_ptr<Scope> scope = std::make_shared<Scope>();
         scope->parent = parent;
-        parse_recursively(scope);
+        parse_recursively(scope, end_on_new_line);
         return scope;
     }
 

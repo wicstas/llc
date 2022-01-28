@@ -106,6 +106,14 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
             } else {
                 token.type = TokenType::Identifier;
                 token.id = scan_string(c);
+                if (token.id == "true") {
+                    token.type = TokenType::Number;
+                    token.value = 1;
+                }
+                if (token.id == "false") {
+                    token.type = TokenType::Number;
+                    token.value = 0;
+                }
             }
             break;
         }

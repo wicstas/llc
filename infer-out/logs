@@ -1,0 +1,23 @@
+[32719][      debug] Loading models took 22.101ms
+[32720][      debug] Sqlite write daemon: starting up
+[32720][      debug] Sqlite write daemon: set up complete, waiting for connections
+[32719][environment] CWD = /home/adruomnfd/Documents/llc
+[32719][environment] No .inferconfig file found
+[32719][environment] Project root = /home/adruomnfd/Documents/llc
+[32719][environment] INFER_ARGS =   @/tmp/args.tmp.e737d2
+[32719][environment] command line arguments:   infer run -- clang++ test/main.cpp
+[32719][environment] Available memory at startup: 28911 MB
+[32719][environment] Active checkers: self-in-block (C/C++/ObjC), starvation (C/C++/ObjC, Java), uninit (C/C++/ObjC), siof (C/C++/ObjC), dotnet-resource-leak (C#/.Net), racerd (C/C++/ObjC, Java), liveness (C/C++/ObjC), inefficient-keyset-iterator (Java), fragment-retains-view (Java), biabduction (C/C++/ObjC, Java, C#/.Net)
+[32719][environment] Scheduler: file
+[32719][environment] Cores used: 6
+[32719][environment] Infer version v1.1.0
+[32719][environment] Copyright 2009 - present Facebook. All Rights Reserved.
+[32719][environment] 
+[32719][   progress] Capturing in make/cc mode...
+[32719][      debug] 
+[32719][      debug] *** Beginning capture of file /home/adruomnfd/Documents/llc/test/main.cpp ***
+[32719][      debug] Loading the following linters files: /home/linuxbrew/.linuxbrew/Cellar/infer/1.1.0_1/lib/infer/infer/bin/../lib/linter_rules/linters.al
+[32719][      debug] 
+[32719][ intern err] test/main.cpp:28:5-12: ERROR translating statement 'ReturnStmt'
+Aborting translation of method 'main' in file 'test/main.cpp': "Assert_failure src/clang/cAst_utils.ml:190:53"
+[32720][      debug] Sqlite write daemon: terminating

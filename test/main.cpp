@@ -4,21 +4,14 @@ using namespace llc;
 
 int main() {
     std::string source = R"(
-       struct Planet{
-           float mass;
-           float size;
-           int age;
-       };
-
-       Planet init_planet(){
-            Planet planet;
-            planet.mass = 1000.0f;
-            planet.size = 10.7f;
-            planet.age = 31.2f;
-            return planet;
-       }
-
-       print(init_planet());
+       for(int i = 0;i < 10;i++){
+            if(i < 2)
+                print(i * 100);
+            else if(i < 5)
+                print(i ** 10);
+            else
+                print(i);
+        }
     )";
 
     Compiler compiler;
