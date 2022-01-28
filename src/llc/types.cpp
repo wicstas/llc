@@ -22,6 +22,61 @@ std::string Location::operator()(const std::string& source) {
     return raw + '\n' + underline;
 }
 
+Scope::Scope() {
+    types["int"] = {};
+    types["void"] = {};
+}
+Struct Scope::run(Scope&) {
+    for (const auto& statement : statements)
+        LLC_CHECK(statement != nullptr);
+
+    for (const auto& statement : statements) {
+        auto result = statement->run(*this);
+        if (result.is_return)
+            return result;
+        else if (dynamic_cast<Return*>(statement.get())) {
+            result.is_return = true;
+            return result;
+        }
+    }
+    return {};
+}
+std::optional<Struct> Scope::find_type(std::string name) const {
+    auto it = types.find(name);
+    if (it == types.end())
+        return parent ? parent->find_type(name) : std::nullopt;
+    else
+        return it->second;
+}
+std::shared_ptr<Struct> Scope::find_variable(std::string name) const {
+    auto it = variables.find(name);
+    if (it == variables.end())
+        return parent ? parent->find_variable(name) : nullptr;
+    else {
+        if (it->second == nullptr)
+            fatal("cannot find variable \"", name, "\"", " definition");
+        return it->second;
+    }
+}
+std::shared_ptr<Function> Scope::find_function(std::string name) const {
+    auto it = functions.find(name);
+    if (it == functions.end())
+        return parent ? parent->find_function(name) : nullptr;
+    else {
+        return it->second;
+    }
+}
+
+Struct Function::run(Scope& scope, std::vector<Expression> args) const {
+    LLC_CHECK(parameters.size() == args.size());
+    LLC_CHECK(definition != nullptr);
+
+    for (int i = 0; i < (int)args.size(); i++)
+        definition->variables[parameters[i]] = std::make_shared<Struct>(args[i](scope));
+
+    return definition->run(scope);
+}
+
 void Expression::apply_parenthese() {
     int highest_prec = 0;
     for (const auto& operand : operands)
@@ -68,6 +123,40 @@ void Expression::collapse() {
             }
         }
     }
+}
+
+Struct IfElseChain::run(Scope& scope) {
+    LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
+    for (int i = 0; i < (int)conditions.size(); i++)
+        if (conditions[i](scope))
+            return actions[i]->run(scope);
+
+    if (conditions.size() == actions.size() - 1)
+        return actions.back()->run(scope);
+    return {};
+}
+
+Struct For::run(Scope& scope) {
+    for (; condition(scope); updation(scope)) {
+        auto result = action->run(scope);
+        if (result.is_return)
+            return result;
+    }
+    return {};
+}
+
+Struct While::run(Scope& scope) {
+    while (condition(scope)) {
+        auto result = action->run(scope);
+        if (result.is_return)
+            return result;
+    }
+    return {};
+}
+
+Struct Print::run(Scope& scope) {
+    print(expression(scope).valuei);
+    return {};
 }
 
 }  // namespace llc

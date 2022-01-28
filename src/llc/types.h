@@ -156,38 +156,13 @@ struct Statement {
 };
 
 struct Scope : Statement {
-    Scope() {
-        types["int"] = {};
-        types["void"] = {};
-    }
+    Scope();
 
     Struct run(Scope& scope);
 
-    std::optional<Struct> find_type(std::string name) const {
-        auto it = types.find(name);
-        if (it == types.end())
-            return parent ? parent->find_type(name) : std::nullopt;
-        else
-            return it->second;
-    }
-    std::shared_ptr<Struct> find_variable(std::string name) const {
-        auto it = variables.find(name);
-        if (it == variables.end())
-            return parent ? parent->find_variable(name) : nullptr;
-        else {
-            if (it->second == nullptr)
-                fatal("cannot find variable \"", name, "\"", " definition");
-            return it->second;
-        }
-    }
-    std::shared_ptr<Function> find_function(std::string name) const {
-        auto it = functions.find(name);
-        if (it == functions.end())
-            return parent ? parent->find_function(name) : nullptr;
-        else {
-            return it->second;
-        }
-    }
+    std::optional<Struct> find_type(std::string name) const;
+    std::shared_ptr<Struct> find_variable(std::string name) const;
+    std::shared_ptr<Function> find_function(std::string name) const;
 
     std::shared_ptr<Scope> parent;
     std::vector<std::shared_ptr<Statement>> statements;
@@ -592,16 +567,6 @@ struct Expression : Statement {
     std::vector<std::shared_ptr<Operand>> operands;
 };
 
-inline Struct Function::run(Scope& scope, std::vector<Expression> args) const {
-    LLC_CHECK(parameters.size() == args.size());
-    LLC_CHECK(definition != nullptr);
-
-    for (int i = 0; i < (int)args.size(); i++)
-        definition->variables[parameters[i]] = std::make_shared<Struct>(args[i](scope));
-
-    return definition->run(scope);
-}
-
 struct FunctionCall : Statement {
     Struct run(Scope& scope) override {
         LLC_CHECK(function != nullptr);
@@ -648,16 +613,7 @@ struct IfElseChain : Statement {
     IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Statement>> actions)
         : conditions(conditions), actions(actions){};
 
-    Struct run(Scope& scope) override {
-        LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
-        for (int i = 0; i < (int)conditions.size(); i++)
-            if (conditions[i](scope))
-                return actions[i]->run(scope);
-
-        if (conditions.size() == actions.size() - 1)
-            return actions.back()->run(scope);
-        return {};
-    }
+    Struct run(Scope& scope) override;
 
     std::vector<Expression> conditions;
     std::vector<std::shared_ptr<Statement>> actions;
@@ -667,14 +623,7 @@ struct For : Statement {
     For(Expression condition, Expression updation, std::shared_ptr<Statement> action)
         : condition(condition), updation(updation), action(action){};
 
-    Struct run(Scope& scope) override {
-        for (; condition(scope); updation(scope)) {
-            auto result = action->run(scope);
-            if (result.is_return)
-                return result;
-        }
-        return {};
-    }
+    Struct run(Scope& scope) override;
 
     Expression condition, updation;
     std::shared_ptr<Statement> action;
@@ -684,14 +633,7 @@ struct While : Statement {
     While(Expression condition, std::shared_ptr<Statement> action)
         : condition(condition), action(action){};
 
-    Struct run(Scope& scope) override {
-        while (condition(scope)) {
-            auto result = action->run(scope);
-            if (result.is_return)
-                return result;
-        }
-        return {};
-    }
+    Struct run(Scope& scope) override;
 
     Expression condition;
     std::shared_ptr<Statement> action;
@@ -700,29 +642,10 @@ struct While : Statement {
 struct Print : Statement {
     Print(Expression expression) : expression(expression){};
 
-    Struct run(Scope& scope) override {
-        print(expression(scope).valuei);
-        return {};
-    }
+    Struct run(Scope& scope) override;
 
     Expression expression;
 };
-
-inline Struct Scope::run(Scope&) {
-    for (const auto& statement : statements)
-        LLC_CHECK(statement != nullptr);
-
-    for (const auto& statement : statements) {
-        auto result = statement->run(*this);
-        if (result.is_return)
-            return result;
-        else if (dynamic_cast<Return*>(statement.get())) {
-            result.is_return = true;
-            return result;
-        }
-    }
-    return {};
-}
 
 using Program = std::shared_ptr<Scope>;
 

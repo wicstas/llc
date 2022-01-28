@@ -31,38 +31,10 @@ struct Parser {
     FunctionCall build_functioncall(std::shared_ptr<Scope> scope);
     Expression build_expression(std::shared_ptr<Scope> scope);
 
-    std::optional<Token> match(TokenType type) {
-        auto token = advance();
-        if (token.type == type) {
-            return token;
-        } else {
-            putback();
-            return std::nullopt;
-        }
-    }
-    std::optional<Token> detect(TokenType type) {
-        if (no_more())
-            return std::nullopt;
-        auto token = advance();
-        putback();
-        if (token.type == type)
-            return token;
-        else
-            return std::nullopt;
-    }
-
-    Token must_match(TokenType type) {
-        if (no_more())
-            fatal("expect \"", enum_to_string(type), "\", but no more token is available");
-        auto token = advance();
-        if (token.type == type) {
-            return token;
-        } else {
-            fatal("token mismatch, expect \"", enum_to_string(type), "\", get \"",
-                  enum_to_string(token.type), "\":\n", token.location(source));
-            return {};
-        }
-    }
+    std::optional<Token> match(TokenType type);
+    std::optional<Token> detect(TokenType type);
+    Token must_match(TokenType type);
+    
     template <typename T>
     T must_has(T value, Token token) {
         if (!value)

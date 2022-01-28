@@ -276,4 +276,37 @@ FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope) {
     return call;
 }
 
+std::optional<Token> Parser::match(TokenType type) {
+    auto token = advance();
+    if (token.type == type) {
+        return token;
+    } else {
+        putback();
+        return std::nullopt;
+    }
+}
+std::optional<Token> Parser::detect(TokenType type) {
+    if (no_more())
+        return std::nullopt;
+    auto token = advance();
+    putback();
+    if (token.type == type)
+        return token;
+    else
+        return std::nullopt;
+}
+
+Token Parser::must_match(TokenType type) {
+    if (no_more())
+        fatal("expect \"", enum_to_string(type), "\", but no more token is available");
+    auto token = advance();
+    if (token.type == type) {
+        return token;
+    } else {
+        fatal("token mismatch, expect \"", enum_to_string(type), "\", get \"",
+              enum_to_string(token.type), "\":\n", token.location(source));
+        return {};
+    }
+}
+
 }  // namespace llc
