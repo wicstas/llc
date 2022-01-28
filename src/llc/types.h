@@ -43,6 +43,7 @@ enum class TokenType {
     Semicolon,
     Identifier,
     Dot,
+    Comma,
     LessThan,
     LessEqual,
     GreaterThan,
@@ -57,8 +58,9 @@ enum class TokenType {
 
 inline std::string enum_to_string(TokenType type) {
     static const char* map[] = {
-        "number",     "++", "--", "+",  "-", "*",  "/",  "(",  ")", "{", "}",       ";",
-        "identifier", ".",  "<",  "<=", ">", ">=", "==", "!=", "=", "!", "invalid", "num_tokens"};
+        "number", "++", "--", "+",          "-", "*",       "/",         "(",  ")",
+        "{",      "}",  ";",  "identifier", ".", ",",       "<",         "<=", ">",
+        ">=",     "==", "!=", "=",          "!", "invalid", "num_tokens"};
     return map[(int)type];
 }
 
@@ -71,6 +73,7 @@ struct Token {
 };
 
 struct Scope;
+struct Expression;
 
 struct Struct {
     Struct() = default;
@@ -134,12 +137,14 @@ struct Struct {
     }
 
     int valuei = 0;
-    bool is_initialized = false;
 };
 
 struct Function {
-    std::vector<std::pair<std::string, Struct>> parameters;
+    Struct run(Scope& scope, std::vector<Expression> args) const;
+
+    Struct return_type;
     std::shared_ptr<Scope> definition;
+    std::vector<std::string> parameters;
 };
 
 ////////////////////////////////
@@ -148,17 +153,19 @@ struct Function {
 struct Statement {
     virtual ~Statement() = default;
 
-    virtual void run(Scope& scope) = 0;
+    virtual Struct run(Scope& scope) = 0;
 };
 
 struct Scope : Statement {
     Scope() {
         types["int"] = {};
+        types["void"] = {};
     }
 
-    void run(Scope&) {
+    Struct run(Scope&) {
         for (const auto& statement : statements)
             statement->run(*this);
+        return {};
     }
 
     std::optional<Struct> find_type(std::string name) const {
@@ -168,19 +175,30 @@ struct Scope : Statement {
         else
             return it->second;
     }
-    std::shared_ptr<Struct> find_varaible(std::string name) const {
+    std::shared_ptr<Struct> find_variable(std::string name) const {
         auto it = variables.find(name);
         if (it == variables.end())
-            return parent ? parent->find_varaible(name) : nullptr;
-        else
+            return parent ? parent->find_variable(name) : nullptr;
+        else {
+            if (it->second == nullptr)
+                fatal("cannot find variable \"", name, "\"", " definition");
             return it->second;
+        }
+    }
+    std::shared_ptr<Function> find_function(std::string name) const {
+        auto it = functions.find(name);
+        if (it == functions.end())
+            return parent ? parent->find_function(name) : nullptr;
+        else {
+            return it->second;
+        }
     }
 
     std::shared_ptr<Scope> parent;
     std::vector<std::shared_ptr<Statement>> statements;
     std::map<std::string, Struct> types;
-    std::map<std::string, Function> functions;
     std::map<std::string, std::shared_ptr<Struct>> variables;
+    std::map<std::string, std::shared_ptr<Function>> functions;
 };
 
 ////////////////////////////////
@@ -256,15 +274,15 @@ struct NumberLiteral : Operand {
     int value;
 };
 
-struct VaraibleOp : Operand {
-    VaraibleOp(std::string name) : name(name){};
+struct VariableOp : Operand {
+    VariableOp(std::string name) : name(name){};
 
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
         return {};
     }
 
     Struct evaluate(const Scope& scope) const override {
-        return *scope.find_varaible(name);
+        return *scope.find_variable(name);
     }
 
     int get_precedence() const override {
@@ -275,7 +293,7 @@ struct VaraibleOp : Operand {
     }
 
     Struct assign(const Scope& scope, const Struct& value) override {
-        return *scope.find_varaible(name) = value;
+        return *scope.find_variable(name) = value;
     }
 
     int precedence = 10;
@@ -369,7 +387,7 @@ struct PostIncrement : PostUnaryOp {
 
     Struct evaluate(const Scope& scope) const override {
         auto old = operand->evaluate(scope);
-        operand->assign(scope, ++old);
+        operand->assign(scope, ++operand->evaluate(scope));
         return old;
     }
 
@@ -388,7 +406,7 @@ struct PostDecrement : PostUnaryOp {
 
     Struct evaluate(const Scope& scope) const override {
         auto old = operand->evaluate(scope);
-        operand->assign(scope, --old);
+        operand->assign(scope, --operand->evaluate(scope));
         return old;
     }
 
@@ -578,27 +596,48 @@ struct Expression : Statement {
         return operands[0]->evaluate(scope);
     }
 
-    void run(Scope& scope) override {
-        this->operator()(scope);
+    Struct run(Scope& scope) override {
+        return this->operator()(scope);
     }
 
     std::vector<std::shared_ptr<Operand>> operands;
+};
+
+inline Struct Function::run(Scope& scope, std::vector<Expression> args) const {
+    LLC_CHECK(parameters.size() == args.size());
+    LLC_CHECK(definition != nullptr);
+
+    for (int i = 0; i < (int)args.size(); i++)
+        definition->variables[parameters[i]] = std::make_shared<Struct>(args[i](scope));
+
+    return definition->run(scope);
+}
+
+struct FunctionCall : Statement {
+    Struct run(Scope& scope) override {
+        LLC_CHECK(function != nullptr);
+        return function->run(scope, arguments);
+    }
+
+    std::shared_ptr<Function> function;
+    std::vector<Expression> arguments;
 };
 
 struct IfElseChain : Statement {
     IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Statement>> actions)
         : conditions(conditions), actions(actions){};
 
-    void run(Scope& scope) override {
+    Struct run(Scope& scope) override {
         LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
         for (int i = 0; i < (int)conditions.size(); i++) {
             if (conditions[i](scope)) {
                 actions[i]->run(scope);
-                return;
+                return {};
             }
         }
         if (conditions.size() == actions.size() - 1)
             actions.back()->run(scope);
+        return {};
     }
 
     std::vector<Expression> conditions;
@@ -609,9 +648,10 @@ struct For : Statement {
     For(Expression condition, Expression updation, std::shared_ptr<Statement> action)
         : condition(condition), updation(updation), action(action){};
 
-    void run(Scope& scope) override {
+    Struct run(Scope& scope) override {
         for (; condition(scope); updation(scope))
             action->run(scope);
+        return {};
     }
 
     Expression condition, updation;
@@ -622,9 +662,10 @@ struct While : Statement {
     While(Expression condition, std::shared_ptr<Statement> action)
         : condition(condition), action(action){};
 
-    void run(Scope& scope) override {
+    Struct run(Scope& scope) override {
         while (condition(scope))
             action->run(scope);
+        return {};
     }
 
     Expression condition;
@@ -634,8 +675,9 @@ struct While : Statement {
 struct Print : Statement {
     Print(Expression expression) : expression(expression){};
 
-    void run(Scope& scope) override {
+    Struct run(Scope& scope) override {
         print(expression(scope).valuei);
+        return {};
     }
 
     Expression expression;

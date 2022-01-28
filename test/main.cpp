@@ -4,20 +4,15 @@ using namespace llc;
 
 int main() {
     std::string source = R"(
-        for(int i = 0; i < 10; i++){
-            print(i);
-        }
-
-        i = 0;
-        while(i++ < 10){
-            if(i < 3){
-                print(i * 10);
-            }else if(i < 6){
-                print(i * 100);
-            }else{
-                print(i * 1000);
+       void fibonacci(int v0,int v1){
+            int v2 = v0 + v1;
+            if(v2 < 100){
+                print(v0);
+                fibonacci(v1, v2);
             }
-        }
+       }
+
+       fibonacci(0, 1);
     )";
 
     Compiler compiler;

@@ -2,10 +2,7 @@
 
 namespace llc {
 
-std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) {
-    std::shared_ptr<Scope> scope = std::make_shared<Scope>();
-    scope->parent = parent;
-
+void Parser::parse_recursively(std::shared_ptr<Scope> scope) {
     while (!no_more()) {
         if (match(TokenType::RightCurlyBracket)) {
             putback();
@@ -13,12 +10,28 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
         }
         if (auto token = match(TokenType::Identifier)) {
             if (auto type = scope->find_type(token->id)) {
+                auto next0 = advance();
+                auto next1 = advance();
                 putback();
-                declare_variable(scope);
+                putback();
+                putback();
+                if (next0.type != TokenType::Identifier)
+                    fatal("expect identifier after type name:\n", next0.location(source));
+                if (next1.type == TokenType::LeftParenthese) {
+                    declare_function(scope);
+                } else {
+                    declare_variable(scope);
+                    must_match(TokenType::Semicolon);
+                }
 
-            } else if (auto var = scope->find_varaible(token->id)) {
+            } else if (auto var = scope->find_variable(token->id)) {
                 putback();
                 scope->statements.push_back(std::make_shared<Expression>(build_expression(scope)));
+
+            } else if (auto function = scope->find_function(token->id)) {
+                putback();
+                scope->statements.push_back(
+                    std::make_shared<FunctionCall>(build_functioncall(scope)));
 
             } else if (token->id == "print") {
                 must_match(TokenType::LeftParenthese);
@@ -33,7 +46,7 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                 expressions.push_back(build_expression(scope));
                 must_match(TokenType::RightParenthese);
                 must_match(TokenType::LeftCurlyBracket);
-                actions.push_back(parse_recursively(scope));
+                actions.push_back(parse_recursively_topdown(scope));
                 must_match(TokenType::RightCurlyBracket);
                 while (true) {
                     auto next1 = advance();
@@ -47,14 +60,14 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                     expressions.push_back(build_expression(scope));
                     must_match(TokenType::RightParenthese);
                     must_match(TokenType::LeftCurlyBracket);
-                    actions.push_back(parse_recursively(scope));
+                    actions.push_back(parse_recursively_topdown(scope));
                     must_match(TokenType::RightCurlyBracket);
                 }
                 if (advance().id != "else") {
                     putback();
                 } else {
                     must_match(TokenType::LeftCurlyBracket);
-                    actions.push_back(parse_recursively(scope));
+                    actions.push_back(parse_recursively_topdown(scope));
                     must_match(TokenType::RightCurlyBracket);
                 }
                 scope->statements.push_back(std::make_shared<IfElseChain>(expressions, actions));
@@ -69,7 +82,7 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                 must_match(TokenType::RightParenthese);
 
                 must_match(TokenType::LeftCurlyBracket);
-                auto sub_scope = parse_recursively(scope);
+                auto sub_scope = parse_recursively_topdown(scope);
                 must_match(TokenType::RightCurlyBracket);
                 scope->statements.push_back(std::make_shared<For>(condtion, updation, sub_scope));
 
@@ -79,13 +92,12 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                 must_match(TokenType::RightParenthese);
 
                 must_match(TokenType::LeftCurlyBracket);
-                auto sub_scope = parse_recursively(scope);
+                auto sub_scope = parse_recursively_topdown(scope);
                 must_match(TokenType::RightCurlyBracket);
                 scope->statements.push_back(std::make_shared<While>(condtion, sub_scope));
-                
+
             } else {
-                fatal("unrecognized token: \"", enum_to_string(token->type), "\":\n",
-                      token->location(source));
+                fatal("unrecognized token: \"", token->id, "\":\n", token->location(source));
             }
 
         } else if (auto token = match(TokenType::Semicolon)) {
@@ -96,24 +108,62 @@ std::shared_ptr<Scope> Parser::parse_recursively(std::shared_ptr<Scope> parent) 
                   token->location(source));
         }
     }
-
-    return scope;
 }
 
 void Parser::declare_variable(std::shared_ptr<Scope> scope) {
-    auto token = match(TokenType::Identifier);
+    auto type_token = must_match(TokenType::Identifier);
+    auto type = must_has(scope->find_type(type_token.id), type_token);
+    auto var_token = must_match(TokenType::Identifier);
+    auto& var = scope->variables[var_token.id];
 
-    if (auto type = scope->find_type(token->id)) {
-        auto var_token = must_match(TokenType::Identifier);
-        auto var = scope->variables[var_token.id] = std::make_shared<Struct>(*type);
+    if (match(TokenType::Assign)) {
+        if (var)
+            fatal("variable \"", var_token.id, "\" redefinition:\n", var_token.location(source));
 
-        if (match(TokenType::Assign)) {
-            Expression expression = build_expression(scope);
-            scope->statements.push_back(std::make_shared<Expression>(std::move(expression)));
-            var->is_initialized = true;
-        } else {
-            must_match(TokenType::Semicolon);
+        var = std::make_shared<Struct>(*type);
+
+        putback();
+        putback();
+        Expression expression = build_expression(scope);
+        scope->statements.push_back(std::make_shared<Expression>(std::move(expression)));
+    }
+}
+
+void Parser::declare_function(std::shared_ptr<Scope> scope) {
+    auto return_type_token = must_match(TokenType::Identifier);
+    auto return_type = must_has(scope->find_type(return_type_token.id), return_type_token);
+    auto func_token = must_match(TokenType::Identifier);
+    auto& func = scope->functions[func_token.id] = std::make_shared<Function>();
+
+    func->return_type = *return_type;
+
+    must_match(TokenType::LeftParenthese);
+    if (!detect(TokenType::RightParenthese)) {
+        while (true) {  // TODO while -> for
+            auto type_token = must_match(TokenType::Identifier);
+            auto type = must_has(scope->find_type(type_token.id), type_token);
+            (void)type;
+            auto var_token = must_match(TokenType::Identifier);
+            func->parameters.push_back(var_token.id);
+            if (detect(TokenType::RightParenthese))
+                break;
+            else
+                must_match(TokenType::Comma);
         }
+    }
+    must_match(TokenType::RightParenthese);
+
+    if (match(TokenType::LeftCurlyBracket)) {
+        if (func->definition)
+            fatal("function \"", func_token.id, "\" redefinition:\n", func_token.location(source));
+        func->definition = std::make_shared<Scope>();
+        func->definition->parent = scope;
+        for (auto param : func->parameters)
+            func->definition->variables.insert({param, std::make_shared<Struct>()});
+        parse_recursively(func->definition);
+        must_match(TokenType::RightCurlyBracket);
+    } else {
+        must_match(TokenType::Semicolon);
     }
 }
 
@@ -126,7 +176,7 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
     while (true) {
         auto token = advance();
 
-        if (token.type == TokenType::Semicolon) {
+        if (token.type == TokenType::Semicolon || token.type == TokenType::Comma) {
             putback();
             break;
         }
@@ -170,16 +220,12 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 putback();
             else
                 expression.operands.push_back(std::make_shared<RightParenthese>());
-            depth--; 
+            depth--;
             if (depth <= 0)
                 break;
         } else if (token.type == TokenType::Identifier) {
-            auto var = scope->find_varaible(token.id);
-            must_has(var, token);
-            if (!var->is_initialized)
-                fatal("variable \"", token.id, "\" is used before been initialized:\n",
-                      token.location(source));
-            expression.operands.push_back(std::make_shared<VaraibleOp>(token.id));
+            must_has(scope->find_variable(token.id), token);
+            expression.operands.push_back(std::make_shared<VariableOp>(token.id));
         } else {
             fatal("unrecognized operand \"", enum_to_string(token.type), "\":\n",
                   token.location(source));
@@ -190,6 +236,28 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
     expression.collapse();
 
     return expression;
+}
+
+FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope) {
+    FunctionCall call;
+
+    auto func_token = must_match(TokenType::Identifier);
+    call.function = must_has(scope->find_function(func_token.id), func_token);
+    must_match(TokenType::LeftParenthese);
+
+    if (!detect(TokenType::RightParenthese)) {
+        while (true) {  // TODO:while -> for
+            call.arguments.emplace_back(build_expression(scope));
+
+            if (detect(TokenType::RightParenthese))
+                break;
+            else
+                must_match(TokenType::Comma);
+        }
+    }
+    must_match(TokenType::RightParenthese);
+
+    return call;
 }
 
 }  // namespace llc

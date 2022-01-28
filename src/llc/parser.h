@@ -13,12 +13,22 @@ struct Parser {
         this->tokens = tokens;
         pos = 0;
 
-        return parse_recursively(nullptr);
+        std::shared_ptr<Scope> scope = std::make_shared<Scope>();
+        parse_recursively(scope);
+        return scope;
     }
 
-    std::shared_ptr<Scope> parse_recursively(std::shared_ptr<Scope> parent);
+    void parse_recursively(std::shared_ptr<Scope> scope);
+    std::shared_ptr<Scope> parse_recursively_topdown(std::shared_ptr<Scope> parent) {
+        std::shared_ptr<Scope> scope = std::make_shared<Scope>();
+        scope->parent = parent;
+        parse_recursively(scope);
+        return scope;
+    }
 
     void declare_variable(std::shared_ptr<Scope> scope);
+    void declare_function(std::shared_ptr<Scope> scope);
+    FunctionCall build_functioncall(std::shared_ptr<Scope> scope);
     Expression build_expression(std::shared_ptr<Scope> scope);
 
     std::optional<Token> match(TokenType type) {
@@ -30,6 +40,17 @@ struct Parser {
             return std::nullopt;
         }
     }
+    std::optional<Token> detect(TokenType type) {
+        if (no_more())
+            return std::nullopt;
+        auto token = advance();
+        putback();
+        if (token.type == type)
+            return token;
+        else
+            return std::nullopt;
+    }
+
     Token must_match(TokenType type) {
         if (no_more())
             fatal("expect \"", enum_to_string(type), "\", but no more token is available");
@@ -43,13 +64,10 @@ struct Parser {
         }
     }
     template <typename T>
-    std::decay_t<decltype(*std::declval<T>())> must_has(T value, Token token) {
-        if (value) {
-            return *value;
-        } else {
+    T must_has(T value, Token token) {
+        if (!value)
             fatal("cannot find \"", token.id, "\":\n", token.location(source));
-            return {};
-        }
+        return value;
     }
 
     void putback() {

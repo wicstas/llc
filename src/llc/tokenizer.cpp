@@ -63,6 +63,7 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
         case '}': token.type = TokenType::RightCurlyBracket; break;
         case ';': token.type = TokenType::Semicolon; break;
         case '.': token.type = TokenType::Dot; break;
+        case ',': token.type = TokenType::Comma; break;
         case '<':
             if (next() == '=') {
                 token.type = TokenType::LessEqual;
