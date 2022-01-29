@@ -5,9 +5,11 @@ namespace llc {
 static inline bool is_digit(char c) { return '0' <= c && c <= '9'; }
 static inline bool is_space(char c) { return c == ' ' || c == '\t' || c == '\f'; }
 static inline bool is_newline(char c) { return c == '\n' || c == '\r'; }
-static inline bool is_alpha(char c) { return c >= 'A' && c <= 'z'; }
+static inline bool is_alpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');}
 
 char Tokenizer::next() {
+    if (current_char_offset == source_char_count)
+        fatal("Tokenizer::next(): out of bound access");
     current_char_offset++;
     column++;
     return *(text++);
@@ -25,6 +27,7 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
     column = 0;
     current_char_offset = 0;
     int start_offset = 0;
+    source_char_count = (int)source.size();
     bool comment = false;
 
     skip(text);
@@ -62,6 +65,8 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
             break;
         case '(': token.type = TokenType::LeftParenthese; break;
         case ')': token.type = TokenType::RightParenthese; break;
+        case '[': token.type = TokenType::LeftSquareBracket; break;
+        case ']': token.type = TokenType::RightSquareBracket; break;
         case '{': token.type = TokenType::LeftCurlyBracket; break;
         case '}': token.type = TokenType::RightCurlyBracket; break;
         case ';': token.type = TokenType::Semicolon; break;
@@ -98,6 +103,16 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
                 putback();
                 token.type = TokenType::Exclaimation;
             }
+            break;
+        case '"':
+            token.type = TokenType::String;
+            c = next();
+            do {
+                token.value_s += c;
+                c = next();
+                if (c == '\0')
+                    fatal("missing \"");
+            } while (c != '"');
             break;
         default:
             if (is_digit(c)) {

@@ -21,6 +21,7 @@ struct Tokenizer {
     int line = 0;
     int column = 0;
     int current_char_offset = 0;
+    int source_char_count = 0;
 };
 
 }  // namespace llc

@@ -21,8 +21,6 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 putback();
                 putback();
                 putback();
-                if (next0.type != TokenType::Identifier)
-                    fatal("expect identifier after type:\n", next0.location(source));
                 if (next1.type == TokenType::LeftParenthese) {
                     declare_function(scope);
                 } else {
@@ -139,6 +137,10 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
         } else if (auto token = match(TokenType::Semicolon)) {
             continue;
 
+        } else if (match(TokenType::Star)) {
+            putback();
+            scope->statements.push_back(std::make_shared<Expression>(build_expression(scope)));
+
         } else if (auto token = match(TokenType::Eof)) {
             break;
 
@@ -155,6 +157,9 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
 void Parser::declare_variable(std::shared_ptr<Scope> scope) {
     auto type_token = must_match(TokenType::Identifier);
     auto type = must_has(scope->find_type(type_token.id), type_token);
+    int n_ptr = 0;
+    while (match(TokenType::Star))
+        n_ptr++;
     auto var_token = must_match(TokenType::Identifier);
     auto var = scope->variables[var_token.id] = std::make_shared<Struct>(*type);
 
@@ -218,20 +223,15 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
 
     while (true) {
         auto token = advance();
-        if (prev.type != TokenType::Identifier && prev.type != TokenType::Number &&
-            prev.type != TokenType::LeftParenthese && token.type != TokenType::Identifier &&
-            token.type != TokenType::Number && token.type != TokenType::RightParenthese)
-            fatal("find two consecutive \"", enum_to_string(token.type), "\":\n",
-                  (prev.location + token.location)(source));
-
         LLC_CHECK(token.type != TokenType::Invalid);
         if (token.type == TokenType::Eof || token.type == TokenType::Semicolon ||
             token.type == TokenType::Comma) {
             putback();
             break;
-        }
-        if (token.type == TokenType::Number)
+        } else if (token.type == TokenType::Number)
             expression.operands.push_back(std::make_shared<NumberLiteral>(token.value));
+        else if (token.type == TokenType::String)
+            expression.operands.push_back(std::make_shared<StringLiteral>(token.value_s));
         else if (token.type == TokenType::Dot)
             expression.operands.push_back(std::make_shared<MemberAccess>());
         else if (token.type == TokenType::Assign)
@@ -248,11 +248,18 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<Addition>());
         else if (token.type == TokenType::Minus)
             expression.operands.push_back(std::make_shared<Subtraction>());
-        else if (token.type == TokenType::Star)
-            expression.operands.push_back(std::make_shared<Multiplication>());
-        else if (token.type == TokenType::ForwardSlash)
+        else if (token.type == TokenType::Star) {
+            if (prev.type == TokenType::Invalid)
+                expression.operands.push_back(std::make_shared<Dereference>());
+            else
+                expression.operands.push_back(std::make_shared<Multiplication>());
+        } else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
-        else if (token.type == TokenType::LessThan)
+        else if (token.type == TokenType::LeftSquareBracket)
+            expression.operands.push_back(std::make_shared<ArrayAccess>());
+        else if (token.type == TokenType::RightSquareBracket) {
+            // do nothing
+        } else if (token.type == TokenType::LessThan)
             expression.operands.push_back(std::make_shared<LessThan>());
         else if (token.type == TokenType::LessEqual)
             expression.operands.push_back(std::make_shared<LessEqual>());
@@ -276,7 +283,11 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 depth--;
             }
         } else if (token.type == TokenType::Identifier) {
-            if (prev.type == TokenType::Dot)
+            if (token.id == "new")
+                expression.operands.push_back(std::make_shared<NewOp>());
+            else if (auto type = scope->find_type(token.id))
+                expression.operands.push_back(std::make_shared<TypeOp>(*type));
+            else if (prev.type == TokenType::Dot)
                 expression.operands.push_back(std::make_shared<StructMember>(token.id));
             else if (scope->find_variable(token.id))
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));

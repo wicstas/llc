@@ -26,6 +26,7 @@ Scope::Scope() {
     types["int"] = {};
     types["float"] = {};
     types["bool"] = {};
+    types["string"] = {};
     types["void"] = {};
 }
 Struct Scope::run(Scope&) {
@@ -168,10 +169,21 @@ Struct While::run(Scope& scope) {
 
 Struct Print::run(Scope& scope) {
     auto print_recursively = [&](auto me, Struct value, std::string name) -> void {
-        if (name != "")
-            print(name, ':', value.value);
-        else if (value.members.size() == 0)
-            print(value.value);
+        if (value.members.size() == 0) {
+            if (value.type == Struct::Type::Float) {
+                if (name != "")
+                    print(name, ':', value.value);
+                else
+                    print(value.value);
+            } else if (value.type == Struct::Type::String) {
+                if (name != "")
+                    print(name, ':', value.value_s);
+                else
+                    print(value.value_s);
+            }else{
+                fatal("cannot print type other than \"float\" and \"string\"");
+            }
+        }
         for (auto member : value.members)
             me(me, *member.second, member.first);
     };

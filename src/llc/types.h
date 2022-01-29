@@ -52,18 +52,22 @@ enum class TokenType : uint64_t {
     NotEqual = 1ul << 20,
     Assign = 1ul << 21,
     Exclaimation = 1ul << 22,
-    Invalid = 1ul << 23,
-    Eof = 1ul << 24,
-    NumTokens = 1ul << 25
+    String = 1ul << 23,
+    LeftSquareBracket = 1ul << 24,
+    RightSquareBracket = 1ul << 25,
+    Invalid = 1ul << 26,
+    Eof = 1ul << 27,
+    NumTokens = 1ul << 28
 };
 
 inline TokenType operator|(TokenType a, TokenType b) { return (TokenType)((uint64_t)a | (uint64_t)b); }
 inline uint64_t operator&(TokenType a, TokenType b) { return (uint64_t)a & (uint64_t)b; }
 
 inline std::string enum_to_string(TokenType type) {
-    static const char* map[] = {"number", "++", "--", "+",          "-", "*",       "/",   "(",         ")",
-                                "{",      "}",  ";",  "identifier", ".", ",",       "<",   "<=",        ">",
-                                ">=",     "==", "!=", "=",          "!", "invalid", "eof", "num_tokens"};
+    static const char* map[] = {"number", "++", "--",      "+",   "-",          "*", "/", "(",
+                                ")",      "{",  "}",       ";",   "identifier", ".", ",", "<",
+                                "<=",     ">",  ">=",      "==",  "!=",         "=", "!", "string",
+                                "[",      "]",  "invalid", "eof", "num_tokens"};
     std::string str;
     for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
         if ((uint64_t(type) >> i) & 1ul)
@@ -79,6 +83,7 @@ struct Token {
     Location location;
 
     float value;
+    std::string value_s;
     std::string id;
 };
 
@@ -87,7 +92,13 @@ struct Expression;
 
 struct Struct {
     Struct() = default;
-    Struct(float value) : value(value){};
+    Struct(float value) : type(Type::Float), value(value){};
+    Struct(std::string value_s) : type(Type::String), value_s(value_s){};
+    Struct(Struct type, size_t size) {
+        *this = type;
+        this->size = size;
+        ptr.reset(new Struct[size]);
+    };
 
     friend Struct operator+(Struct a, Struct b) {
         a.value += b.value;
@@ -133,8 +144,14 @@ struct Struct {
     operator bool() const { return (bool)value; }
 
     bool is_return = false;
+
+    enum Type { Float, String } type;
     float value = 0.0f;
+    std::string value_s;
     std::map<std::string, std::shared_ptr<Struct>> members;
+
+    size_t size = 0;
+    std::shared_ptr<Struct[]> ptr;
 };
 
 struct Function {
@@ -231,6 +248,20 @@ struct NumberLiteral : Operand {
     float value;
 };
 
+struct StringLiteral : Operand {
+    StringLiteral(std::string value) : value(value){};
+
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; }
+
+    Struct evaluate(Scope&) override { return value; }
+
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+
+    int precedence = 10;
+    std::string value;
+};
+
 struct Assignable {
     virtual std::shared_ptr<Struct> get(Scope& scope) const = 0;
 };
@@ -316,6 +347,83 @@ struct MemberAccess : BinaryOp, Assignable {
         LLC_CHECK(member != nullptr);
         LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
         return variable->get(scope)->members[member->name];
+    }
+
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+    int precedence = 8;
+};
+
+struct ArrayAccess : BinaryOp {
+    Struct evaluate(Scope& scope) override {
+        Struct arr = a->evaluate(scope);
+        int index = (int)b->evaluate(scope).value;
+        LLC_CHECK(index >= 0);
+        LLC_CHECK(index < (int)arr.size);
+        return arr.ptr[index];
+    }
+    Struct assign(Scope& scope, const Struct& value) override {
+        Struct arr = a->evaluate(scope);
+        int index = (int)b->evaluate(scope).value;
+        LLC_CHECK(index >= 0);
+        LLC_CHECK(index < (int)arr.size);
+        return arr.ptr[index] = value;
+    }
+
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+
+    int precedence = 2;
+};
+
+struct TypeOp : Operand {
+    TypeOp(Struct type) : type(type){};
+
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; }
+    Struct evaluate(Scope&) override { return type; }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+
+    int precedence = 8;
+    Struct type;
+};
+struct NewOp : Operand {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        LLC_CHECK(index >= 0);
+        LLC_CHECK(index + 2 == (int)operands.size());
+        ArrayAccess* access = dynamic_cast<ArrayAccess*>(operands[index + 1].get());
+        if (access == nullptr) {
+            type = operands[index + 1];
+        } else {
+            type = access->a;
+            size = access->b;
+        }
+        return {index + 1};
+    }
+    Struct evaluate(Scope& scope) override {
+        return Struct(type->evaluate(scope), size ? (int)size->evaluate(scope).value : 1);
+    }
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+
+    int precedence = 1;
+
+    std::shared_ptr<Operand> type;
+    std::shared_ptr<Operand> size;
+};
+
+struct Dereference : PreUnaryOp {
+    Struct evaluate(Scope& scope) override {
+        LLC_CHECK(dynamic_cast<VariableOp*>(operand.get()) != nullptr);
+        Struct lvalue = operand->evaluate(scope);
+        LLC_CHECK(lvalue.size != 0);
+        return lvalue.ptr[0];
+    }
+
+    Struct assign(Scope& scope, const Struct& value) override {
+        Struct lvalue = operand->evaluate(scope);
+        LLC_CHECK(lvalue.size != 0);
+        return lvalue.ptr[0] = value;
     }
 
     int get_precedence() const override { return precedence; }
