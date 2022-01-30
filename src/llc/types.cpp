@@ -70,17 +70,24 @@ std::shared_ptr<Function> Scope::find_function(std::string name) const {
     }
 }
 
-Struct Function::run(Scope& scope, std::vector<Expression> args) const {
-    LLC_CHECK(parameters.size() == args.size());
+Struct InternalFunction::run(Scope& scope, std::vector<Expression> expressions) const {
+    LLC_CHECK(parameters.size() == expressions.size());
     LLC_CHECK(definition != nullptr);
 
-    for (int i = 0; i < (int)args.size(); i++)
+    for (int i = 0; i < (int)expressions.size(); i++)
         LLC_CHECK(definition->variables.find(parameters[i]) != definition->variables.end());
 
-    for (int i = 0; i < (int)args.size(); i++)
-        definition->variables[parameters[i]] = std::make_shared<Struct>(args[i](scope));
+    for (int i = 0; i < (int)expressions.size(); i++)
+        definition->variables[parameters[i]] = std::make_shared<Struct>(expressions[i](scope));
 
     return definition->run(scope);
+}
+
+Struct ExternalFunction::run(Scope& scope, std::vector<Expression> expressions) const {
+    std::vector<Struct> arguments;
+    for (auto& expr : expressions)
+        arguments.push_back(expr(scope));
+    return invoke(arguments);
 }
 
 void Expression::apply_parenthese() {
@@ -164,32 +171,6 @@ Struct While::run(Scope& scope) {
         if (result.is_return)
             return result;
     }
-    return {};
-}
-
-Struct Print::run(Scope& scope) {
-    auto print_recursively = [&](auto me, Struct value, std::string name) -> void {
-        if (value.members.size() == 0) {
-            if (value.type == Struct::Type::Float) {
-                if (name != "")
-                    print(name, ':', value.value);
-                else
-                    print(value.value);
-            } else if (value.type == Struct::Type::String) {
-                if (name != "")
-                    print(name, ':', value.value_s);
-                else
-                    print(value.value_s);
-            }else{
-                fatal("cannot print type other than \"float\" and \"string\"");
-            }
-        }
-        for (auto member : value.members)
-            me(me, *member.second, member.first);
-    };
-
-    print_recursively(print_recursively, expression(scope), "");
-
     return {};
 }
 

@@ -33,8 +33,12 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 scope->statements.push_back(std::make_shared<Expression>(build_expression(scope)));
 
             } else if (auto function = scope->find_function(token->id)) {
-                putback();
-                scope->statements.push_back(std::make_shared<FunctionCall>(build_functioncall(scope)));
+                scope->statements.push_back(
+                    std::make_shared<FunctionCall>(build_functioncall(scope, function)));
+
+            } else if (registered_functions.find(token->id) != registered_functions.end()) {
+                scope->statements.push_back(std::make_shared<FunctionCall>(
+                    build_functioncall(scope, registered_functions.find(token->id)->second)));
 
             } else if (token->id == "struct") {
                 declare_struct(scope);
@@ -42,12 +46,6 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
 
             } else if (token->id == "return") {
                 scope->statements.push_back(std::make_shared<Return>(build_expression(scope)));
-                must_match(TokenType::Semicolon);
-
-            } else if (token->id == "print") {
-                must_match(TokenType::LeftParenthese);
-                scope->statements.push_back(std::make_shared<Print>(build_expression(scope)));
-                must_match(TokenType::RightParenthese);
                 must_match(TokenType::Semicolon);
 
             } else if (token->id == "if") {
@@ -174,7 +172,8 @@ void Parser::declare_function(std::shared_ptr<Scope> scope) {
     auto return_type_token = must_match(TokenType::Identifier);
     auto return_type = must_has(scope->find_type(return_type_token.id), return_type_token);
     auto func_token = must_match(TokenType::Identifier);
-    auto& func = scope->functions[func_token.id] = std::make_shared<Function>();
+    auto func = std::make_shared<InternalFunction>();
+    scope->functions[func_token.id] = func;
 
     func->return_type = *return_type;
 
@@ -248,12 +247,9 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<Addition>());
         else if (token.type == TokenType::Minus)
             expression.operands.push_back(std::make_shared<Subtraction>());
-        else if (token.type == TokenType::Star) {
-            if (prev.type == TokenType::Invalid)
-                expression.operands.push_back(std::make_shared<Dereference>());
-            else
-                expression.operands.push_back(std::make_shared<Multiplication>());
-        } else if (token.type == TokenType::ForwardSlash)
+        else if (token.type == TokenType::Star)
+            expression.operands.push_back(std::make_shared<Multiplication>());
+        else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
         else if (token.type == TokenType::LeftSquareBracket)
             expression.operands.push_back(std::make_shared<ArrayAccess>());
@@ -283,18 +279,20 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 depth--;
             }
         } else if (token.type == TokenType::Identifier) {
-            if (token.id == "new")
-                expression.operands.push_back(std::make_shared<NewOp>());
-            else if (auto type = scope->find_type(token.id))
+            if (auto type = scope->find_type(token.id))
                 expression.operands.push_back(std::make_shared<TypeOp>(*type));
             else if (prev.type == TokenType::Dot)
                 expression.operands.push_back(std::make_shared<StructMember>(token.id));
             else if (scope->find_variable(token.id))
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));
-            else {
-                must_has(scope->find_function(token.id), token);
-                putback();
-                expression.operands.push_back(std::make_shared<FunctionCallOp>(build_functioncall(scope)));
+            else if (auto function = scope->find_function(token.id)) {
+                expression.operands.push_back(
+                    std::make_shared<FunctionCallOp>(build_functioncall(scope, function)));
+            } else if (registered_functions.find(token.id) != registered_functions.end()) {
+                expression.operands.push_back(std::make_shared<FunctionCallOp>(
+                    build_functioncall(scope, registered_functions.find(token.id)->second)));
+            } else {
+                fatal("\"", token.id, "\" is neither a function nor a variable:\n", token.location(source));
             }
         } else {
             fatal("unrecognized operand \"", enum_to_string(token.type), "\":\n", token.location(source));
@@ -307,11 +305,10 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
     return expression;
 }
 
-FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope) {
+FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope, std::shared_ptr<Function> function) {
     FunctionCall call;
 
-    auto func_token = must_match(TokenType::Identifier);
-    call.function = must_has(scope->find_function(func_token.id), func_token);
+    call.function = function;
     must_match(TokenType::LeftParenthese);
 
     while (!match(TokenType::RightParenthese)) {

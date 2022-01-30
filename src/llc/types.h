@@ -94,11 +94,6 @@ struct Struct {
     Struct() = default;
     Struct(float value) : type(Type::Float), value(value){};
     Struct(std::string value_s) : type(Type::String), value_s(value_s){};
-    Struct(Struct type, size_t size) {
-        *this = type;
-        this->size = size;
-        ptr.reset(new Struct[size]);
-    };
 
     friend Struct operator+(Struct a, Struct b) {
         a.value += b.value;
@@ -149,17 +144,25 @@ struct Struct {
     float value = 0.0f;
     std::string value_s;
     std::map<std::string, std::shared_ptr<Struct>> members;
-
-    size_t size = 0;
-    std::shared_ptr<Struct[]> ptr;
 };
 
 struct Function {
-    Struct run(Scope& scope, std::vector<Expression> args) const;
+    virtual ~Function() = default;
+    virtual Struct run(Scope& scope, std::vector<Expression> expressions) const = 0;
+};
+
+struct InternalFunction : Function {
+    Struct run(Scope& scope, std::vector<Expression> expressions) const override;
 
     Struct return_type;
     std::shared_ptr<Scope> definition;
     std::vector<std::string> parameters;
+};
+
+struct ExternalFunction : Function {
+    Struct run(Scope& scope, std::vector<Expression> expressions) const override;
+
+    virtual Struct invoke(std::vector<Struct> args) const = 0;
 };
 
 struct Statement {
@@ -355,19 +358,15 @@ struct MemberAccess : BinaryOp, Assignable {
 };
 
 struct ArrayAccess : BinaryOp {
-    Struct evaluate(Scope& scope) override {
-        Struct arr = a->evaluate(scope);
-        int index = (int)b->evaluate(scope).value;
-        LLC_CHECK(index >= 0);
-        LLC_CHECK(index < (int)arr.size);
-        return arr.ptr[index];
+    Struct evaluate(Scope&) override {
+        // Struct arr = a->evaluate(scope);
+        // int index = (int)b->evaluate(scope).value;
+        return {};
     }
-    Struct assign(Scope& scope, const Struct& value) override {
-        Struct arr = a->evaluate(scope);
-        int index = (int)b->evaluate(scope).value;
-        LLC_CHECK(index >= 0);
-        LLC_CHECK(index < (int)arr.size);
-        return arr.ptr[index] = value;
+    Struct assign(Scope&, const Struct&) override {
+        // Struct arr = a->evaluate(scope);
+        // int index = (int)b->evaluate(scope).value;
+        return {};
     }
 
     int get_precedence() const override { return precedence; }
@@ -386,49 +385,6 @@ struct TypeOp : Operand {
 
     int precedence = 8;
     Struct type;
-};
-struct NewOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
-        LLC_CHECK(index >= 0);
-        LLC_CHECK(index + 2 == (int)operands.size());
-        ArrayAccess* access = dynamic_cast<ArrayAccess*>(operands[index + 1].get());
-        if (access == nullptr) {
-            type = operands[index + 1];
-        } else {
-            type = access->a;
-            size = access->b;
-        }
-        return {index + 1};
-    }
-    Struct evaluate(Scope& scope) override {
-        return Struct(type->evaluate(scope), size ? (int)size->evaluate(scope).value : 1);
-    }
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
-
-    int precedence = 1;
-
-    std::shared_ptr<Operand> type;
-    std::shared_ptr<Operand> size;
-};
-
-struct Dereference : PreUnaryOp {
-    Struct evaluate(Scope& scope) override {
-        LLC_CHECK(dynamic_cast<VariableOp*>(operand.get()) != nullptr);
-        Struct lvalue = operand->evaluate(scope);
-        LLC_CHECK(lvalue.size != 0);
-        return lvalue.ptr[0];
-    }
-
-    Struct assign(Scope& scope, const Struct& value) override {
-        Struct lvalue = operand->evaluate(scope);
-        LLC_CHECK(lvalue.size != 0);
-        return lvalue.ptr[0] = value;
-    }
-
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
-    int precedence = 8;
 };
 
 struct Assignment : BinaryOp {
@@ -669,15 +625,14 @@ struct While : Statement {
     std::shared_ptr<Scope> action;
 };
 
-struct Print : Statement {
-    Print(Expression expression) : expression(expression){};
+struct Program {
+    Program(std::shared_ptr<Scope> scope) : scope(scope){};
 
-    Struct run(Scope& scope) override;
+    void run() { scope->run(*scope); }
 
-    Expression expression;
+  private:
+    std::shared_ptr<Scope> scope;
 };
-
-using Program = std::shared_ptr<Scope>;
 
 }  // namespace llc
 

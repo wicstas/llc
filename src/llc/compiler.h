@@ -7,6 +7,11 @@
 namespace llc {
 
 struct Compiler {
+    template <typename F>
+    void register_function(std::string name, F func) {
+        parser.register_function(name, func);
+    }
+
     Program compile(std::string source) {
         auto tokens = tokenizer.tokenize(source);
         return parser.parse(source, tokens);
