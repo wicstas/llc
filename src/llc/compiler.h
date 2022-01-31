@@ -8,8 +8,13 @@ namespace llc {
 
 struct Compiler {
     template <typename F>
-    void register_function(std::string name, F func) {
-        parser.register_function(name, func);
+    void bind(std::string name, F func) {
+        parser.bind(name, func);
+    }
+
+    template <typename T>
+    ConcreteTypeBuilder<T>& bind(std::string name) {
+        return parser.bind<T>(name);
     }
 
     Program compile(std::string source) {
