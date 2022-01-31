@@ -13,14 +13,14 @@ struct Parser;
 
 struct TypeMemberBuilder {
     virtual ~TypeMemberBuilder() = default;
-    virtual void build(void* buffer, Struct object) const = 0;
+    virtual void build(void* buffer, Object object) const = 0;
 };
 
 template <typename T, typename M>
 struct ConcreteTypeMemberBuilder : TypeMemberBuilder {
     ConcreteTypeMemberBuilder(std::string id, M T::*ptr) : id(id), ptr(ptr){};
 
-    void build(void* object, Struct input) const override { ((T*)object)->*ptr = input.members[id]->value; }
+    void build(void* object, Object input) const override { ((T*)object)->*ptr = input.members[id]->value; }
 
     std::string id;
     M T::*ptr;
@@ -30,7 +30,7 @@ struct TypeBuilder {
     virtual ~TypeBuilder() = default;
 
     template <typename T>
-    T build(Struct input) {
+    T build(Object input) {
         T object;
         for (const auto& builder : builders)
             builder.second->build(&object, input);
@@ -42,21 +42,21 @@ struct TypeBuilder {
 
 template <typename T>
 struct ConcreteTypeBuilder : TypeBuilder {
-    ConcreteTypeBuilder(Struct& object) : object(object){};
+    ConcreteTypeBuilder(Object& object) : object(object){};
 
     template <typename M>
     ConcreteTypeBuilder& bind(std::string id, M T::*ptr) {
-        object.members[id] = std::make_shared<Struct>();
+        object.members[id] = std::make_shared<Object>();
         builders[id] = std::make_shared<ConcreteTypeMemberBuilder<T, M>>(id, ptr);
 
         return *this;
     }
 
-    Struct& object;
+    Object& object;
 };
 
 template <int index, typename... Args>
-void helper(std::tuple<std::decay_t<Args>...>& tuple, std::vector<Struct> args,
+void helper(std::tuple<std::decay_t<Args>...>& tuple, std::vector<Object> args,
             std::map<uint64_t, std::shared_ptr<TypeBuilder>> builders) {
     using T = std::decay_t<decltype(std::get<index>(tuple))>;
     if constexpr (std::is_same<T, int>::value) {
@@ -79,7 +79,7 @@ struct FunctionInstance : ExternalFunction {
     FunctionInstance(F f, std::map<uint64_t, std::shared_ptr<TypeBuilder>>& builders)
         : f(f), builders(builders){};
 
-    Struct invoke(std::vector<Struct> args) const override {
+    Object invoke(std::vector<Object> args) const override {
         LLC_CHECK(args.size() == sizeof...(Args));
 
         std::tuple<std::decay_t<Args>...> tuple = {};
@@ -141,7 +141,7 @@ struct Parser {
 
     template <typename T>
     ConcreteTypeBuilder<T>& bind(std::string name) {
-        registered_types.push_back({name, Struct()});
+        registered_types.push_back({name, Object()});
         auto builder = std::make_shared<ConcreteTypeBuilder<T>>(registered_types.back().second);
         type_builders[typeid(T).hash_code()] = builder;
         return *builder;
@@ -193,7 +193,7 @@ struct Parser {
     size_t pos;
 
     std::map<std::string, std::shared_ptr<ExternalFunction>> registered_functions;
-    std::vector<std::pair<std::string, Struct>> registered_types;
+    std::vector<std::pair<std::string, Object>> registered_types;
     std::map<uint64_t, std::shared_ptr<TypeBuilder>> type_builders;
 
     friend struct Compiler;

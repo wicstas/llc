@@ -49,10 +49,10 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 must_match(TokenType::Semicolon);
 
             } else if (token->id == "if") {
-                std::vector<Expression> expressions;
+                std::vector<Expression> exprs;
                 std::vector<std::shared_ptr<Scope>> actions;
                 must_match(TokenType::LeftParenthese);
-                expressions.push_back(build_expression(scope));
+                exprs.push_back(build_expression(scope));
                 must_match(TokenType::RightParenthese);
 
                 if (match(TokenType::LeftCurlyBracket)) {
@@ -72,7 +72,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                     }
                     must_match(TokenType::LeftParenthese);
 
-                    expressions.push_back(build_expression(scope));
+                    exprs.push_back(build_expression(scope));
                     must_match(TokenType::RightParenthese);
                     if (match(TokenType::LeftCurlyBracket)) {
                         actions.push_back(parse_recursively_topdown(scope));
@@ -91,7 +91,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                         actions.push_back(parse_recursively_topdown(scope, true));
                     }
                 }
-                scope->statements.push_back(std::make_shared<IfElseChain>(expressions, actions));
+                scope->statements.push_back(std::make_shared<IfElseChain>(exprs, actions));
 
             } else if (token->id == "for") {
                 auto for_scope = std::make_shared<Scope>();
@@ -159,7 +159,7 @@ void Parser::declare_variable(std::shared_ptr<Scope> scope) {
     while (match(TokenType::Star))
         n_ptr++;
     auto var_token = must_match(TokenType::Identifier);
-    auto var = scope->variables[var_token.id] = std::make_shared<Struct>(*type);
+    auto var = scope->variables[var_token.id] = std::make_shared<Object>(*type);
 
     if (match(TokenType::Assign)) {
         putback();
@@ -193,7 +193,7 @@ void Parser::declare_function(std::shared_ptr<Scope> scope) {
         func->definition = std::make_shared<Scope>();
         func->definition->parent = scope;
         for (auto param : func->parameters)
-            func->definition->variables.insert({param, std::make_shared<Struct>()});
+            func->definition->variables.insert({param, std::make_shared<Object>()});
         parse_recursively(func->definition);
         must_match(TokenType::RightCurlyBracket);
     } else {
@@ -207,10 +207,10 @@ void Parser::declare_struct(std::shared_ptr<Scope> scope) {
     auto definition = parse_recursively_topdown(scope);
     LLC_CHECK(definition != nullptr);
     must_match(TokenType::RightCurlyBracket);
-    Struct stru;
+    Object stru;
     for (auto& var : definition->variables)
         if (var.second != nullptr)
-            stru.members[var.first] = std::make_shared<Struct>(*var.second);
+            stru.members[var.first] = std::make_shared<Object>(*var.second);
     scope->types[name.id] = stru;
 }
 

@@ -29,63 +29,57 @@ Scope::Scope() {
     types["string"] = {};
     types["void"] = {};
 }
-Struct Scope::run(Scope&) {
+Object Scope::run(const Scope&) const {
     for (const auto& statement : statements)
         LLC_CHECK(statement != nullptr);
 
     for (const auto& statement : statements) {
-        auto result = statement->run(*this);
-        if (result.is_return)
-            return result;
-        else if (dynamic_cast<Return*>(statement.get())) {
-            result.is_return = true;
+        try {
+            statement->run(*this);
+        } catch (const Object& result) {
             return result;
         }
     }
     return {};
 }
-std::optional<Struct> Scope::find_type(std::string name) const {
+std::optional<Object> Scope::find_type(std::string name) const {
     auto it = types.find(name);
     if (it == types.end())
         return parent ? parent->find_type(name) : std::nullopt;
     else
         return it->second;
 }
-std::shared_ptr<Struct> Scope::find_variable(std::string name) const {
+std::optional<Object> Scope::find_variable(std::string name) const {
     auto it = variables.find(name);
     if (it == variables.end())
-        return parent ? parent->find_variable(name) : nullptr;
-    else {
-        if (it->second == nullptr)
-            fatal("cannot find definition of variable \"", name, "\"");
+        return parent ? parent->find_variable(name) : std::nullopt;
+    else
         return it->second;
-    }
 }
-std::shared_ptr<Function> Scope::find_function(std::string name) const {
+std::optional<Function> Scope::find_function(std::string name) const {
     auto it = functions.find(name);
     if (it == functions.end())
-        return parent ? parent->find_function(name) : nullptr;
-    else {
+        return parent ? parent->find_function(name) : std::nullopt;
+    else
         return it->second;
-    }
 }
 
-Struct InternalFunction::run(Scope& scope, std::vector<Expression> expressions) const {
-    LLC_CHECK(parameters.size() == expressions.size());
+Object InternalFunction::run(const Scope& scope, const std::vector<Expression>& exprs) const {
+    LLC_CHECK(parameters.size() == exprs.size());
     LLC_CHECK(definition != nullptr);
 
-    for (int i = 0; i < (int)expressions.size(); i++)
+    for (int i = 0; i < (int)exprs.size(); i++)
         LLC_CHECK(definition->variables.find(parameters[i]) != definition->variables.end());
 
-    for (int i = 0; i < (int)expressions.size(); i++)
-        definition->variables[parameters[i]] = std::make_shared<Struct>(expressions[i](scope));
+    for (int i = 0; i < (int)exprs.size(); i++)
+        definition->variables[parameters[i]] = exprs[i](scope);
 
     return definition->run(scope);
 }
 
-Struct ExternalFunction::run(Scope& scope, std::vector<Expression> expressions) const {
-    std::vector<Struct> arguments;
-    for (auto& expr : expressions)
+Object ExternalFunction::run(const Scope& scope, const std::vector<Expression>& exprs) const {
+    std::vector<Object> arguments;
+    for (auto& expr : exprs)
         arguments.push_back(expr(scope));
     return invoke(arguments);
 }
@@ -138,39 +132,39 @@ void Expression::collapse() {
     }
 }
 
-Struct IfElseChain::run(Scope& scope) {
+Object IfElseChain::run(const Scope&) const {
     LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
     for (int i = 0; i < (int)actions.size(); i++)
         LLC_CHECK(actions[i] != nullptr);
 
-    for (int i = 0; i < (int)conditions.size(); i++)
-        if (conditions[i](scope))
-            return actions[i]->run(scope);
+    // for (int i = 0; i < (int)conditions.size(); i++)
+    //     if (conditions[i](scope))
+    //         return actions[i]->run(scope);
 
-    if (conditions.size() == actions.size() - 1)
-        return actions.back()->run(scope);
+    // if (conditions.size() == actions.size() - 1)
+    //     return actions.back()->run(scope);
     return {};
 }
 
-Struct For::run(Scope& scope) {
+Object For::run(const Scope&) const {
     LLC_CHECK(action != nullptr);
-    for (; condition(*internal_scope); updation(*internal_scope)) {
-        auto result = action->run(scope);
+    // for (; condition(*internal_scope); updation(*internal_scope)) {
+    //     auto result = action->run(scope);
 
-        if (result.is_return)
-            return result;
-    }
+    //     if (result.is_return)
+    //         return result;
+    // }
     return {};
 }
 
-Struct While::run(Scope& scope) {
+Object While::run(const Scope&) const {
     LLC_CHECK(action != nullptr);
 
-    while (condition(scope)) {
-        auto result = action->run(scope);
-        if (result.is_return)
-            return result;
-    }
+    // while (condition(scope)) {
+    //     auto result = action->run(scope);
+    //     if (result.is_return)
+    //         return result;
+    // }
     return {};
 }
 

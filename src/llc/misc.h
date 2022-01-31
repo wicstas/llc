@@ -31,6 +31,46 @@ void fatal(const Args&... args) {
 
 std::vector<std::string> separate_lines(const std::string& source);
 
+template <typename T>
+struct HasOperatorAdd {
+    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
+
+  private:
+    template <typename U>
+    std::true_type check(decltype(std::declval<U>() + std::declval<U>())*);
+    std::false_type check(...);
+};
+
+template <typename T>
+struct HasOperatorSub {
+    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
+
+  private:
+    template <typename U>
+    std::true_type check(decltype(std::declval<U>() - std::declval<U>())*);
+    std::false_type check(...);
+};
+
+template <typename T>
+struct HasOperatorMul {
+    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
+
+  private:
+    template <typename U>
+    std::true_type check(decltype(std::declval<U>() * std::declval<U>())*);
+    std::false_type check(...);
+};
+
+template <typename T>
+struct HasOperatorDiv {
+    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
+
+  private:
+    template <typename U>
+    std::true_type check(decltype(std::declval<U>() / std::declval<U>())*);
+    std::false_type check(...);
+};
+
 }  // namespace llc
 
 #endif  // LLC_MISC_H
