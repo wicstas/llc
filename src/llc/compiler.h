@@ -13,7 +13,7 @@ struct Compiler {
     }
 
     template <typename T>
-    ConcreteTypeBuilder<T>& bind(std::string name) {
+    auto bind(std::string name) {
         return parser.bind<T>(name);
     }
 

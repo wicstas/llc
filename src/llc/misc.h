@@ -4,6 +4,7 @@
 #include <llc/defines.h>
 
 #include <iostream>
+#include <utility>
 #include <vector>
 
 namespace llc {
@@ -29,46 +30,70 @@ void fatal(const Args&... args) {
         }                                                                                               \
     } while (false)
 
+#define LLC_TYPE_ID(x) typeid(x).hash_code()
+
 std::vector<std::string> separate_lines(const std::string& source);
 
 template <typename T>
 struct HasOperatorAdd {
-    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
-
-  private:
     template <typename U>
-    std::true_type check(decltype(std::declval<U>() + std::declval<U>())*);
-    std::false_type check(...);
+    static constexpr std::true_type check(decltype(std::declval<U>() - std::declval<U>())*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+
+    static constexpr bool value = decltype(check<T>())::value;
 };
 
 template <typename T>
 struct HasOperatorSub {
-    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
-
-  private:
     template <typename U>
-    std::true_type check(decltype(std::declval<U>() - std::declval<U>())*);
-    std::false_type check(...);
+    static constexpr std::true_type check(decltype(std::declval<U>() + std::declval<U>())*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+
+    static constexpr bool value = decltype(check<T>())::value;
 };
 
 template <typename T>
 struct HasOperatorMul {
-    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
-
-  private:
     template <typename U>
-    std::true_type check(decltype(std::declval<U>() * std::declval<U>())*);
-    std::false_type check(...);
+    static constexpr std::true_type check(decltype(std::declval<U>() * std::declval<U>())*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+
+    static constexpr bool value = decltype(check<T>())::value;
 };
 
 template <typename T>
 struct HasOperatorDiv {
-    constexpr bool value = std::is_same<check<U>(0), std::true_type>::value;
-
-  private:
     template <typename U>
-    std::true_type check(decltype(std::declval<U>() / std::declval<U>())*);
-    std::false_type check(...);
+    static constexpr std::true_type check(decltype(std::declval<U>() / std::declval<U>())*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+
+    static constexpr bool value = decltype(check<T>())::value;
+};
+
+template <typename... Ts>
+struct TypePack;
+
+template <>
+struct TypePack<> {};
+
+template <typename T, typename... Ts>
+struct TypePack<T, Ts...> : TypePack<Ts...> {
+    using type = typename std::decay<T>::type;
+    using rest = TypePack<Ts...>;
+
+    template <int index>
+    auto at() {
+        static_assert(index >= 0, "invalid index");
+
+        if constexpr (index == 0)
+            return type();
+        else
+            return rest::template at<index - 1>();
+    }
 };
 
 }  // namespace llc

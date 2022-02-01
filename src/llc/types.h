@@ -91,6 +91,9 @@ struct Scope;
 struct Expression;
 
 struct BaseObject {
+    virtual ~BaseObject() = default;
+    virtual BaseObject* clone() const = 0;
+    virtual void copy(void* ptr, size_t type_id) const = 0;
     virtual void add(BaseObject* rhs) = 0;
     virtual void sub(BaseObject* rhs) = 0;
     virtual void mul(BaseObject* rhs) = 0;
@@ -99,62 +102,81 @@ struct BaseObject {
 
 template <typename T>
 struct ConcreteObject : BaseObject {
-    ConcreteObject(std::string type_name) : type_name(type_name){};
+    ConcreteObject(T value, std::string type_name) : value(value), type_name(type_name){};
 
-    void add(BaseObject* rhs) {
+    virtual BaseObject* clone() const override { return new ConcreteObject<T>(*this); }
+
+    void copy(void* ptr, size_t type_id) const override {
+        LLC_CHECK(LLC_TYPE_ID(T) == type_id);
+        *((T*)ptr) = value;
+    }
+
+    void add(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
         if constexpr (HasOperatorAdd<T>::value)
             value += ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"+\"")
+            fatal("type \"", type_name, "\" does not has operator \"+\"");
     }
-    void sub(BaseObject* rhs) {
+    void sub(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
         if constexpr (HasOperatorSub<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"-\"")
+            fatal("type \"", type_name, "\" does not has operator \"-\"");
     }
-    void mul(BaseObject* rhs) {
+    void mul(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
         if constexpr (HasOperatorMul<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"*\"")
+            fatal("type \"", type_name, "\" does not has operator \"*\"");
     }
-    void div(BaseObject* rhs) {
+    void div(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
         if constexpr (HasOperatorDiv<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"/\"")
+            fatal("type \"", type_name, "\" does not has operator \"/\"");
     }
 
-    std::string type_name;
     T value;
+    std::string type_name;
 };
 
 struct Object {
     Object() : base(nullptr){};
     explicit Object(std::unique_ptr<BaseObject> base) : base(std::move(base)) { LLC_CHECK(base != nullptr); };
     template <typename T>
-    explicit Object(T instance) : base(std::make_unique<ConcreteObject<T>>(instance)) {}
+    explicit Object(T instance, std::string type_name)
+        : base(std::make_unique<ConcreteObject<T>>(instance, type_name)) {}
 
     Object(const Object& rhs) {
         LLC_CHECK(rhs.base != nullptr);
-        base = std::make_unique<BaseObject>(*rhs.base);
+        base.reset(rhs.base->clone());
     };
     Object(Object&&) = default;
-    Object& operator=(Object rhs) { swap(rhs); }
+    Object& operator=(Object rhs) {
+        swap(rhs);
+        return *this;
+    }
     void swap(Object& rhs) { std::swap(base, rhs.base); }
+
+    template <typename T>
+    T as() const {
+        LLC_CHECK(base != nullptr);
+        T value;
+        base->copy(&value, LLC_TYPE_ID(value));
+        return value;
+    }
 
     Object& operator+=(const Object& rhs) {
         LLC_CHECK(rhs.base != nullptr);
@@ -187,13 +209,14 @@ struct Object {
 
 struct BaseFunction {
     virtual ~BaseFunction() = default;
+    virtual BaseFunction* clone() const = 0;
     virtual Object run(const Scope& scope, const std::vector<Expression>& exprs) const = 0;
 };
 
 struct InternalFunction : BaseFunction {
+    BaseFunction* clone() const override { return new InternalFunction(*this); }
     Object run(const Scope& scope, const std::vector<Expression>& exprs) const override;
 
-  private:
     Object return_type;
     std::shared_ptr<Scope> definition;
     std::vector<std::string> parameters;
@@ -206,15 +229,63 @@ struct ExternalFunction : BaseFunction {
     virtual Object invoke(const std::vector<Object>& args) const = 0;
 };
 
+template <typename Return, typename... Args>
+struct FunctionInstance : ExternalFunction {
+    using F = Return (*)(Args...);
+    FunctionInstance(F f) : f(f){};
+
+    BaseFunction* clone() const override { return new FunctionInstance<Return, Args...>(*this); }
+
+    Object invoke(const std::vector<Object>& args) const override {
+        LLC_CHECK(args.size() == sizeof...(Args));
+        TypePack<Args...> types;
+
+        if constexpr (std::is_same<Return, void>::value) {
+            if constexpr (sizeof...(Args) == 0)
+                f();
+            else if constexpr (sizeof...(Args) == 1)
+                f(args[0].as<decltype(types.template at<0>())>());
+            else if constexpr (sizeof...(Args) == 2)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[0].as<decltype(types.template at<1>())>());
+            else
+                fatal("too many arguments, only support <= 4");
+
+        } else {
+            if constexpr (sizeof...(Args) == 0)
+                return f();
+            else if constexpr (sizeof...(Args) == 1)
+                return f(args[0].as<decltype(types.template at<0>())>());
+            else if constexpr (sizeof...(Args) == 2)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[0].as<decltype(types.template at<1>())>());
+            else
+                fatal("too many arguments, only support <= 4");
+        }
+
+        return {};
+    }
+
+    F f;
+};
+
 struct Function {
+    Function() : base(nullptr){};
     Function(std::unique_ptr<BaseFunction> base) : base(std::move(base)) { LLC_CHECK(base != nullptr); };
 
-    Function(const Function& rhs) : base(std::make_unique<BaseFunction>(*rhs.base)){};
+    Function(const Function& rhs) {
+        LLC_CHECK(rhs.base != nullptr);
+        base.reset(rhs.base->clone());
+    };
     Function(Function&&) = default;
-    Function& operator=(Function rhs) { swap(rhs); }
+    Function& operator=(Function rhs) {
+        swap(rhs);
+        return *this;
+    }
     void swap(Function& rhs) { std::swap(base, rhs.base); }
 
     Object run(const Scope& scope, const std::vector<Expression>& exprs) const {
+        LLC_CHECK(base != nullptr);
         return base->run(scope, exprs);
     }
 
@@ -261,7 +332,7 @@ struct Operand {
 };
 
 struct BaseOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override{};
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; };
 };
 
 struct BinaryOp : Operand {
@@ -301,7 +372,7 @@ struct PostUnaryOp : Operand {
 struct NumberLiteral : BaseOp {
     NumberLiteral(float value) : value(value){};
 
-    Object evaluate(const Scope&) const override { return (Object)value; }
+    Object evaluate(const Scope&) const override { return Object(value, "float"); }
 
     int get_precedence() const override { return precedence; }
     void set_precedence(int prec) override { precedence = prec; }
@@ -313,7 +384,7 @@ struct NumberLiteral : BaseOp {
 struct StringLiteral : BaseOp {
     StringLiteral(std::string value) : value(value){};
 
-    Object evaluate(const Scope&) const override { return (Object)value; }
+    Object evaluate(const Scope&) const override { return Object(value, "string"); }
 
     int get_precedence() const override { return precedence; }
     void set_precedence(int prec) override { precedence = prec; }
@@ -427,7 +498,7 @@ struct ObjectMember : Operand {
 // };
 
 struct TypeOp : BaseOp {
-    TypeOp(Object type) : type(std::move(type)){};
+    TypeOp(Object type) : type(type){};
 
     Object evaluate(const Scope&) const override { return type; }
 
@@ -612,12 +683,9 @@ struct Expression : Statement {
 };
 
 struct FunctionCall : Statement {
-    Object run(const Scope& scope) const override {
-        LLC_CHECK(function != nullptr);
-        return function->run(scope, arguments);
-    }
+    Object run(const Scope& scope) const override { return function.run(scope, arguments); }
 
-    std::shared_ptr<Function> function;
+    Function function;
     std::vector<Expression> arguments;
 };
 

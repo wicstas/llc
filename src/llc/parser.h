@@ -9,113 +9,6 @@
 
 namespace llc {
 
-struct Parser;
-
-struct TypeMemberBuilder {
-    virtual ~TypeMemberBuilder() = default;
-    virtual void build(void* buffer, Object object) const = 0;
-};
-
-template <typename T, typename M>
-struct ConcreteTypeMemberBuilder : TypeMemberBuilder {
-    ConcreteTypeMemberBuilder(std::string id, M T::*ptr) : id(id), ptr(ptr){};
-
-    void build(void* object, Object input) const override { ((T*)object)->*ptr = input.members[id]->value; }
-
-    std::string id;
-    M T::*ptr;
-};
-
-struct TypeBuilder {
-    virtual ~TypeBuilder() = default;
-
-    template <typename T>
-    T build(Object input) {
-        T object;
-        for (const auto& builder : builders)
-            builder.second->build(&object, input);
-        return object;
-    }
-
-    std::map<std::string, std::shared_ptr<TypeMemberBuilder>> builders;
-};
-
-template <typename T>
-struct ConcreteTypeBuilder : TypeBuilder {
-    ConcreteTypeBuilder(Object& object) : object(object){};
-
-    template <typename M>
-    ConcreteTypeBuilder& bind(std::string id, M T::*ptr) {
-        object.members[id] = std::make_shared<Object>();
-        builders[id] = std::make_shared<ConcreteTypeMemberBuilder<T, M>>(id, ptr);
-
-        return *this;
-    }
-
-    Object& object;
-};
-
-template <int index, typename... Args>
-void helper(std::tuple<std::decay_t<Args>...>& tuple, std::vector<Object> args,
-            std::map<uint64_t, std::shared_ptr<TypeBuilder>> builders) {
-    using T = std::decay_t<decltype(std::get<index>(tuple))>;
-    if constexpr (std::is_same<T, int>::value) {
-        std::get<index>(tuple) = args[index].value;
-    } else if constexpr (std::is_same<T, float>::value) {
-        std::get<index>(tuple) = args[index].value;
-    } else if constexpr (std::is_same<T, std::string>::value) {
-        std::get<index>(tuple) = args[index].value_s;
-    } else if constexpr (std::is_same<T, const char*>::value) {
-        std::get<index>(tuple) = args[index].value_s.c_str();
-    } else {
-        LLC_CHECK(builders[typeid(T).hash_code()] != nullptr);
-        std::get<index>(tuple) = builders[typeid(T).hash_code()]->build<T>(args[index]);
-    }
-}
-
-template <typename Return, typename... Args>
-struct FunctionInstance : ExternalFunction {
-    using F = Return (*)(Args...);
-    FunctionInstance(F f, std::map<uint64_t, std::shared_ptr<TypeBuilder>>& builders)
-        : f(f), builders(builders){};
-
-    Object invoke(std::vector<Object> args) const override {
-        LLC_CHECK(args.size() == sizeof...(Args));
-
-        std::tuple<std::decay_t<Args>...> tuple = {};
-        if constexpr (sizeof...(Args) >= 1)
-            helper<0, Args...>(tuple, args, builders);
-        if constexpr (sizeof...(Args) >= 2)
-            helper<1, Args...>(tuple, args, builders);
-
-        if constexpr (std::is_same<Return, void>::value) {
-            if constexpr (sizeof...(Args) == 0)
-                f();
-            else if constexpr (sizeof...(Args) == 1)
-                f(std::get<0>(tuple));
-            else if constexpr (sizeof...(Args) == 2)
-                f(std::get<0>(tuple), std::get<1>(tuple));
-            else
-                fatal("too many arguments, only support <= 4");
-
-        } else {
-            if constexpr (sizeof...(Args) == 0)
-                return f();
-            else if constexpr (sizeof...(Args) == 1)
-                return f(std::get<0>(tuple));
-            else if constexpr (sizeof...(Args) == 2)
-                return f(std::get<0>(tuple), std::get<1>(tuple));
-            else
-                fatal("too many arguments, only support <= 4");
-        }
-
-        return {};
-    }
-
-    F f;
-    std::map<uint64_t, std::shared_ptr<TypeBuilder>>& builders;
-};
-
 struct Parser {
     Parser() = default;
     Parser(const Parser&) = delete;
@@ -136,15 +29,29 @@ struct Parser {
 
     template <typename Return, typename... Args>
     void bind(std::string name, Return (*func)(Args...)) {
-        registered_functions[name] = std::make_shared<FunctionInstance<Return, Args...>>(func, type_builders);
+        registered_functions[name] = (Function)std::make_unique<FunctionInstance<Return, Args...>>(func);
     }
 
     template <typename T>
-    ConcreteTypeBuilder<T>& bind(std::string name) {
-        registered_types.push_back({name, Object()});
-        auto builder = std::make_shared<ConcreteTypeBuilder<T>>(registered_types.back().second);
-        type_builders[typeid(T).hash_code()] = builder;
-        return *builder;
+    struct TypeBindHelper {
+        TypeBindHelper(std::string name, Parser& parser) : name(name), parser(parser) {
+            parser.registered_types[name] = Object(T(), name);
+        };
+
+        template <typename M>
+        TypeBindHelper bind(std::string name, M T::*ptr) {
+            (void)name;
+            (void)ptr;
+            return *this;
+        }
+
+        std::string name;
+        Parser& parser;
+    };
+
+    template <typename T>
+    TypeBindHelper<T> bind(std::string name) {
+        return TypeBindHelper<T>(name, *this);
     }
 
   private:
@@ -161,7 +68,7 @@ struct Parser {
     void declare_variable(std::shared_ptr<Scope> scope);
     void declare_function(std::shared_ptr<Scope> scope);
     void declare_struct(std::shared_ptr<Scope> scope);
-    FunctionCall build_functioncall(std::shared_ptr<Scope> scope, std::shared_ptr<Function> function);
+    FunctionCall build_functioncall(std::shared_ptr<Scope> scope, Function function);
     Expression build_expression(std::shared_ptr<Scope> scope);
 
     std::optional<Token> match(TokenType type);
@@ -182,7 +89,6 @@ struct Parser {
         LLC_CHECK(!no_more());
         return tokens[pos++];
     }
-
     bool no_more() const {
         LLC_CHECK(pos <= tokens.size());
         return pos == tokens.size();
@@ -192,9 +98,8 @@ struct Parser {
     std::vector<Token> tokens;
     size_t pos;
 
-    std::map<std::string, std::shared_ptr<ExternalFunction>> registered_functions;
-    std::vector<std::pair<std::string, Object>> registered_types;
-    std::map<uint64_t, std::shared_ptr<TypeBuilder>> type_builders;
+    std::map<std::string, Function> registered_functions;
+    std::map<std::string, Object> registered_types;
 
     friend struct Compiler;
 };

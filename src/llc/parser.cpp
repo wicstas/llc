@@ -34,7 +34,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
 
             } else if (auto function = scope->find_function(token->id)) {
                 scope->statements.push_back(
-                    std::make_shared<FunctionCall>(build_functioncall(scope, function)));
+                    std::make_shared<FunctionCall>(build_functioncall(scope, *function)));
 
             } else if (registered_functions.find(token->id) != registered_functions.end()) {
                 scope->statements.push_back(std::make_shared<FunctionCall>(
@@ -159,7 +159,7 @@ void Parser::declare_variable(std::shared_ptr<Scope> scope) {
     while (match(TokenType::Star))
         n_ptr++;
     auto var_token = must_match(TokenType::Identifier);
-    auto var = scope->variables[var_token.id] = std::make_shared<Object>(*type);
+    auto var = scope->variables[var_token.id] = *type;
 
     if (match(TokenType::Assign)) {
         putback();
@@ -172,8 +172,7 @@ void Parser::declare_function(std::shared_ptr<Scope> scope) {
     auto return_type_token = must_match(TokenType::Identifier);
     auto return_type = must_has(scope->find_type(return_type_token.id), return_type_token);
     auto func_token = must_match(TokenType::Identifier);
-    auto func = std::make_shared<InternalFunction>();
-    scope->functions[func_token.id] = func;
+    auto func = std::make_unique<InternalFunction>();
 
     func->return_type = *return_type;
 
@@ -193,12 +192,14 @@ void Parser::declare_function(std::shared_ptr<Scope> scope) {
         func->definition = std::make_shared<Scope>();
         func->definition->parent = scope;
         for (auto param : func->parameters)
-            func->definition->variables.insert({param, std::make_shared<Object>()});
+            func->definition->variables.insert({param, Object()});
         parse_recursively(func->definition);
         must_match(TokenType::RightCurlyBracket);
     } else {
         must_match(TokenType::Semicolon);
     }
+
+    scope->functions[func_token.id] = Function(std::move(func));
 }
 
 void Parser::declare_struct(std::shared_ptr<Scope> scope) {
@@ -207,11 +208,10 @@ void Parser::declare_struct(std::shared_ptr<Scope> scope) {
     auto definition = parse_recursively_topdown(scope);
     LLC_CHECK(definition != nullptr);
     must_match(TokenType::RightCurlyBracket);
-    Object stru;
-    for (auto& var : definition->variables)
-        if (var.second != nullptr)
-            stru.members[var.first] = std::make_shared<Object>(*var.second);
-    scope->types[name.id] = stru;
+    Object object;
+    // for (auto& var : definition->variables)
+    //     object.members[var.first] = std::make_shared<Object>(*var.second);
+    // scope->types[name.id] = stru;
 }
 
 Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
@@ -231,18 +231,18 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<NumberLiteral>(token.value));
         else if (token.type == TokenType::String)
             expression.operands.push_back(std::make_shared<StringLiteral>(token.value_s));
-        else if (token.type == TokenType::Dot)
-            expression.operands.push_back(std::make_shared<MemberAccess>());
+        // else if (token.type == TokenType::Dot)
+        //     expression.operands.push_back(std::make_shared<MemberAccess>());
         else if (token.type == TokenType::Assign)
             expression.operands.push_back(std::make_shared<Assignment>());
-        else if (token.type == TokenType::Increment && prev.type == TokenType::Identifier)
-            expression.operands.push_back(std::make_shared<PostIncrement>());
-        else if (token.type == TokenType::Increment && prev.type != TokenType::Identifier)
-            expression.operands.push_back(std::make_shared<PreIncrement>());
-        else if (token.type == TokenType::Decrement && prev.type == TokenType::Identifier)
-            expression.operands.push_back(std::make_shared<PostIncrement>());
-        else if (token.type == TokenType::Decrement && prev.type != TokenType::Identifier)
-            expression.operands.push_back(std::make_shared<PreIncrement>());
+        // else if (token.type == TokenType::Increment && prev.type == TokenType::Identifier)
+        //     expression.operands.push_back(std::make_shared<PostIncrement>());
+        // else if (token.type == TokenType::Increment && prev.type != TokenType::Identifier)
+        //     expression.operands.push_back(std::make_shared<PreIncrement>());
+        // else if (token.type == TokenType::Decrement && prev.type == TokenType::Identifier)
+        //     expression.operands.push_back(std::make_shared<PostIncrement>());
+        // else if (token.type == TokenType::Decrement && prev.type != TokenType::Identifier)
+        //     expression.operands.push_back(std::make_shared<PreIncrement>());
         else if (token.type == TokenType::Plus)
             expression.operands.push_back(std::make_shared<Addition>());
         else if (token.type == TokenType::Minus)
@@ -251,22 +251,22 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<Multiplication>());
         else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
-        else if (token.type == TokenType::LeftSquareBracket)
-            expression.operands.push_back(std::make_shared<ArrayAccess>());
-        else if (token.type == TokenType::RightSquareBracket) {
-            // do nothing
-        } else if (token.type == TokenType::LessThan)
-            expression.operands.push_back(std::make_shared<LessThan>());
-        else if (token.type == TokenType::LessEqual)
-            expression.operands.push_back(std::make_shared<LessEqual>());
-        else if (token.type == TokenType::GreaterThan)
-            expression.operands.push_back(std::make_shared<GreaterThan>());
-        else if (token.type == TokenType::GreaterEqual)
-            expression.operands.push_back(std::make_shared<GreaterEqual>());
-        else if (token.type == TokenType::Equal)
-            expression.operands.push_back(std::make_shared<Equal>());
-        else if (token.type == TokenType::NotEqual)
-            expression.operands.push_back(std::make_shared<NotEqual>());
+        // else if (token.type == TokenType::LeftSquareBracket)
+        //     expression.operands.push_back(std::make_shared<ArrayAccess>());
+        // else if (token.type == TokenType::RightSquareBracket) {
+        //     // do nothing
+        //  } else if (token.type == TokenType::LessThan)
+        //     expression.operands.push_back(std::make_shared<LessThan>());
+        // else if (token.type == TokenType::LessEqual)
+        //     expression.operands.push_back(std::make_shared<LessEqual>());
+        // else if (token.type == TokenType::GreaterThan)
+        //     expression.operands.push_back(std::make_shared<GreaterThan>());
+        // else if (token.type == TokenType::GreaterEqual)
+        //     expression.operands.push_back(std::make_shared<GreaterEqual>());
+        // else if (token.type == TokenType::Equal)
+        //     expression.operands.push_back(std::make_shared<Equal>());
+        // else if (token.type == TokenType::NotEqual)
+        //     expression.operands.push_back(std::make_shared<NotEqual>());
         else if (token.type == TokenType::LeftParenthese) {
             depth++;
             expression.operands.push_back(std::make_shared<LeftParenthese>());
@@ -282,12 +282,12 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             if (auto type = scope->find_type(token.id))
                 expression.operands.push_back(std::make_shared<TypeOp>(*type));
             else if (prev.type == TokenType::Dot)
-                expression.operands.push_back(std::make_shared<StructMember>(token.id));
+                expression.operands.push_back(std::make_shared<ObjectMember>(token.id));
             else if (scope->find_variable(token.id))
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));
             else if (auto function = scope->find_function(token.id)) {
                 expression.operands.push_back(
-                    std::make_shared<FunctionCallOp>(build_functioncall(scope, function)));
+                    std::make_shared<FunctionCallOp>(build_functioncall(scope, *function)));
             } else if (registered_functions.find(token.id) != registered_functions.end()) {
                 expression.operands.push_back(std::make_shared<FunctionCallOp>(
                     build_functioncall(scope, registered_functions.find(token.id)->second)));
@@ -305,7 +305,7 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
     return expression;
 }
 
-FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope, std::shared_ptr<Function> function) {
+FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope, Function function) {
     FunctionCall call;
 
     call.function = function;
