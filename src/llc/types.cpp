@@ -4,6 +4,13 @@
 
 namespace llc {
 
+std::map<size_t, std::string> type_id_to_name = {
+    {LLC_TYPE_ID(int),"int"},
+    {LLC_TYPE_ID(float),"float"},
+    {LLC_TYPE_ID(double),"double"},
+    {LLC_TYPE_ID(bool),"bool"},
+    };
+
 std::string Location::operator()(const std::string& source) {
     LLC_CHECK(line >= 0);
     LLC_CHECK(column >= 0);
@@ -20,6 +27,21 @@ std::string Location::operator()(const std::string& source) {
     raw = pos + raw;
     underline = std::string(pos.size(), ' ') + underline;
     return raw + '\n' + underline;
+}
+
+std::string enum_to_string(TokenType type) {
+    static const char* map[] = {"number", "++", "--",      "+",   "-",          "*", "/", "(",
+                                ")",      "{",  "}",       ";",   "identifier", ".", ",", "<",
+                                "<=",     ">",  ">=",      "==",  "!=",         "=", "!", "string",
+                                "[",      "]",  "invalid", "eof", "num_tokens"};
+    std::string str;
+    for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+        if ((uint64_t(type) >> i) & 1ul)
+            str += (std::string)map[i] + "|";
+
+    if (str.back() == '|')
+        str.pop_back();
+    return str;
 }
 
 Scope::Scope() {
@@ -78,6 +100,7 @@ Object InternalFunction::run(const Scope& scope, const std::vector<Expression>& 
 
 Object ExternalFunction::run(const Scope& scope, const std::vector<Expression>& exprs) const {
     std::vector<Object> arguments;
+
     for (auto& expr : exprs)
         arguments.push_back(expr(scope));
     return invoke(arguments);

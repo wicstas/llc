@@ -228,8 +228,8 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<NumberLiteral>(token.value));
         else if (token.type == TokenType::String)
             expression.operands.push_back(std::make_shared<StringLiteral>(token.value_s));
-        // else if (token.type == TokenType::Dot)
-        //     expression.operands.push_back(std::make_shared<MemberAccess>());
+        else if (token.type == TokenType::Dot)
+            expression.operands.push_back(std::make_shared<MemberAccess>());
         else if (token.type == TokenType::Assign)
             expression.operands.push_back(std::make_shared<Assignment>());
         // else if (token.type == TokenType::Increment && prev.type == TokenType::Identifier)

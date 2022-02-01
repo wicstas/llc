@@ -16,5 +16,7 @@ src/llc/tokenizer.cpp
 src/llc/parser.cpp
 )
 
-add_executable(llc_test test/main.cpp)
+add_executable(llc_test 
+test/main.cpp
+)
 target_link_libraries(llc_test PRIVATE llc)

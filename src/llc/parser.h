@@ -34,18 +34,26 @@ struct Parser {
 
     template <typename T>
     struct TypeBindHelper {
-        TypeBindHelper(std::string name, Parser& parser) : name(name), parser(parser) {
-            parser.registered_types[name] = Object(T(), name);
-        };
+        TypeBindHelper(std::string type_name, Parser& parser)
+            : type_name(type_name),
+              object(std::make_unique<ConcreteObject<T>>(T(), type_name)),
+              parser(parser){
+                  type_id_to_name[LLC_TYPE_ID(T)] = type_name;
+              };
+        ~TypeBindHelper() { parser.registered_types[type_name] = Object(std::move(object)); }
 
         template <typename M>
-        TypeBindHelper bind(std::string name, M T::*ptr) {
-            (void)name;
-            (void)ptr;
+        TypeBindHelper& bind(std::string id, M T::*ptr) {
+            using U = typename ConcreteObject<T>::template ConcreteAccessor<M>;
+            auto it = type_id_to_name.find(LLC_TYPE_ID(M));
+            if (it == type_id_to_name.end())
+                fatal("cannot bind \"", id, "\" because its type is unknown");
+            object->accessors[id] = std::make_shared<U>(ptr, it->second);
             return *this;
         }
 
-        std::string name;
+        std::string type_name;
+        std::unique_ptr<ConcreteObject<T>> object;
         Parser& parser;
     };
 

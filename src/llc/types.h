@@ -63,20 +63,7 @@ enum class TokenType : uint64_t {
 inline TokenType operator|(TokenType a, TokenType b) { return (TokenType)((uint64_t)a | (uint64_t)b); }
 inline uint64_t operator&(TokenType a, TokenType b) { return (uint64_t)a & (uint64_t)b; }
 
-inline std::string enum_to_string(TokenType type) {
-    static const char* map[] = {"number", "++", "--",      "+",   "-",          "*", "/", "(",
-                                ")",      "{",  "}",       ";",   "identifier", ".", ",", "<",
-                                "<=",     ">",  ">=",      "==",  "!=",         "=", "!", "string",
-                                "[",      "]",  "invalid", "eof", "num_tokens"};
-    std::string str;
-    for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
-        if ((uint64_t(type) >> i) & 1ul)
-            str += (std::string)map[i] + "|";
-
-    if (str.back() == '|')
-        str.pop_back();
-    return str;
-}
+std::string enum_to_string(TokenType type);
 
 struct Token {
     TokenType type = TokenType::Invalid;
@@ -90,25 +77,40 @@ struct Token {
 struct Scope;
 struct Expression;
 
+extern std::map<size_t, std::string> type_id_to_name;
+
 struct BaseObject {
+    BaseObject(std::string type_name) : type_name_(type_name){};
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
-    virtual void copy(void* ptr, size_t type_id) const = 0;
+    virtual void copy(void* ptr, std::string type_name) const = 0;
+    virtual void assign(const BaseObject* src) = 0;
     virtual void add(BaseObject* rhs) = 0;
     virtual void sub(BaseObject* rhs) = 0;
     virtual void mul(BaseObject* rhs) = 0;
     virtual void div(BaseObject* rhs) = 0;
+    virtual BaseObject* get_member(std::string name) = 0;
+    std::string type_name() const { return type_name_; }
+
+  private:
+    std::string type_name_;
 };
 
 template <typename T>
 struct ConcreteObject : BaseObject {
-    ConcreteObject(T value, std::string type_name) : value(value), type_name(type_name){};
-
+    ConcreteObject(T value, std::string type_name) : BaseObject(type_name), value(value){};
     virtual BaseObject* clone() const override { return new ConcreteObject<T>(*this); }
 
-    void copy(void* ptr, size_t type_id) const override {
-        LLC_CHECK(LLC_TYPE_ID(T) == type_id);
-        *((T*)ptr) = value;
+    void copy(void* ptr, std::string type_name) const override {
+        using Ty = typename std::decay<T>::type;
+        if (type_name != this->type_name())
+            fatal("cannot convert type \"", this->type_name(), "\" to type \"", type_name, "\"");
+        *((Ty*)ptr) = value;
+    }
+    void assign(const BaseObject* src) override {
+        if (!std::is_reference<T>::value)
+            fatal("assign to rvalue");
+        src->copy(&value, type_name());
     }
 
     void add(BaseObject* rhs) override {
@@ -118,7 +120,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorAdd<T>::value)
             value += ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"+\"");
+            fatal("type \"", type_name(), "\" does not have operator \"+\"");
     }
     void sub(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -127,7 +129,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorSub<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"-\"");
+            fatal("type \"", type_name(), "\" does not have operator \"-\"");
     }
     void mul(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -136,7 +138,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorMul<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"*\"");
+            fatal("type \"", type_name(), "\" does not have operator \"*\"");
     }
     void div(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -145,11 +147,34 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorDiv<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name, "\" does not has operator \"/\"");
+            fatal("type \"", type_name(), "\" does not have operator \"/\"");
+    }
+
+    struct Accessor {
+        virtual ~Accessor() = default;
+        virtual BaseObject* access(T& object) const = 0;
+    };
+
+    template <typename M>
+    struct ConcreteAccessor : Accessor {
+        ConcreteAccessor(M T::*ptr, std::string type_name) : ptr(ptr), type_name(type_name) {}
+
+        BaseObject* access(T& object) const override {
+            return new ConcreteObject<M&>(object.*ptr, type_name);
+        }
+
+        M T::*ptr;
+        std::string type_name;
+    };
+
+    BaseObject* get_member(std::string name) override {
+        auto it = accessors.find(name);
+        LLC_CHECK(it != accessors.end());
+        return it->second->access(value);
     }
 
     T value;
-    std::string type_name;
+    std::map<std::string, std::shared_ptr<Accessor>> accessors;
 };
 
 struct Object {
@@ -172,12 +197,31 @@ struct Object {
     }
     void swap(Object& rhs) { std::swap(base, rhs.base); }
 
+    void assign(const Object& rhs) {
+        LLC_CHECK(base != nullptr);
+        base->assign(rhs.base.get());
+    }
+
     template <typename T>
     T as() const {
         LLC_CHECK(base != nullptr);
         T value;
-        base->copy(&value, LLC_TYPE_ID(value));
+        auto it = type_id_to_name.find(LLC_TYPE_ID(T));
+        if (it == type_id_to_name.end())
+            fatal("unknown type \"", typeid(T).name(), "\"");
+        base->copy(&value, it->second);
         return value;
+    }
+
+    std::string type_name() const {
+        LLC_CHECK(base != nullptr);
+        return base->type_name();
+    }
+
+    Object operator[](std::string member_id) {
+        LLC_CHECK(base != nullptr);
+        std::unique_ptr<BaseObject> object(base->get_member(member_id));
+        return Object(std::move(object));
     }
 
     Object& operator+=(const Object& rhs) {
@@ -397,25 +441,20 @@ struct StringLiteral : BaseOp {
     std::string value;
 };
 
-struct LvalueOp {
-    virtual Object& get(const Scope& scope) const = 0;
-};
-
-struct VariableOp : BaseOp, LvalueOp {
+struct VariableOp : BaseOp {
     VariableOp(std::string name) : name(name){};
 
     Object evaluate(const Scope& scope) const override {
-        if (auto var = scope.find_variable(name))
-            return *var;
-        LLC_CHECK(false);
-        return {};
+        LLC_CHECK(scope.find_variable(name).has_value());
+        return scope.variables[name];
     }
 
     Object assign(const Scope& scope, const Object& value) override {
         LLC_CHECK(scope.find_variable(name).has_value());
         return scope.variables[name] = value;
     }
-    Object& get(const Scope& scope) const override {
+
+    Object& original(const Scope& scope) const {
         LLC_CHECK(scope.find_variable(name).has_value());
         return scope.variables[name];
     }
@@ -443,41 +482,36 @@ struct ObjectMember : Operand {
     std::string name;
 };
 
-// struct MemberAccess : BinaryOp, LvalueOp {
-//     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
-//         LLC_CHECK(index - 1 >= 0);
-//         LLC_CHECK(index + 1 < (int)operands.size());
-//         a = operands[index - 1];
-//         b = operands[index + 1];
-//         return {index - 1, index + 1};
-//     }
+struct MemberAccess : BinaryOp {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+        LLC_CHECK(index - 1 >= 0);
+        LLC_CHECK(index + 1 < (int)operands.size());
+        a = operands[index - 1];
+        b = operands[index + 1];
+        return {index - 1, index + 1};
+    }
 
-//     Object evaluate(const Scope& scope) override {
-//         auto variable = dynamic_cast<LvalueOp*>(a.get());
-//         auto member = dynamic_cast<ObjectMember*>(b.get());
-//         LLC_CHECK(variable != nullptr);
-//         LLC_CHECK(member != nullptr);
-//         LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
-//     }
-//     Object assign(const Scope& scope, const Object& value) override {
-//         auto variable = dynamic_cast<LvalueOp*>(a.get());
-//         auto member = dynamic_cast<ObjectMember*>(b.get());
-//         LLC_CHECK(variable != nullptr);
-//         LLC_CHECK(member != nullptr);
-//         LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
-//     }
-//     Object get(const Scope& scope) const override {
-//         auto variable = dynamic_cast<LvalueOp*>(a.get());
-//         auto member = dynamic_cast<ObjectMember*>(b.get());
-//         LLC_CHECK(variable != nullptr);
-//         LLC_CHECK(member != nullptr);
-//         LLC_CHECK(variable->get(scope)->members[member->name] != nullptr);
-//     }
+    Object evaluate(const Scope& scope) const override {
+        auto variable = dynamic_cast<VariableOp*>(a.get());
+        auto member = dynamic_cast<ObjectMember*>(b.get());
+        LLC_CHECK(variable != nullptr);
+        LLC_CHECK(member != nullptr);
+        Object obj = variable->evaluate(scope)[member->name];
+        return variable->evaluate(scope)[member->name];
+    }
+    Object assign(const Scope& scope, const Object& value) override {
+        auto variable = dynamic_cast<VariableOp*>(a.get());
+        auto member = dynamic_cast<ObjectMember*>(b.get());
+        LLC_CHECK(variable != nullptr);
+        LLC_CHECK(member != nullptr);
+        variable->original(scope)[member->name].assign(value);
+        return variable->evaluate(scope)[member->name];
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 8;
-// };
+    int get_precedence() const override { return precedence; }
+    void set_precedence(int prec) override { precedence = prec; }
+    int precedence = 8;
+};
 
 // struct ArrayAccess : BinaryOp {
 //     Object evaluate(Scope&) override {
