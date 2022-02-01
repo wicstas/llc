@@ -497,12 +497,12 @@ struct ExternalFunction : BaseFunction {
 };
 
 template <typename Return, typename... Args>
-struct FunctionInstance : ExternalFunction {
+struct ConcreteFunction : ExternalFunction {
     using F = Return (*)(Args...);
-    FunctionInstance(F f) : f(f){};
+    ConcreteFunction(F f) : f(f){};
 
     BaseFunction* clone() const override {
-        return new FunctionInstance<Return, Args...>(*this);
+        return new ConcreteFunction<Return, Args...>(*this);
     }
 
     Object invoke(const std::vector<Object>& args) const override {
@@ -1132,7 +1132,7 @@ struct While : Statement {
 struct Program {
     template <typename Return, typename... Args>
     void bind(std::string name, Return (*func)(Args...)) {
-        functions[name] = (Function)std::make_unique<FunctionInstance<Return, Args...>>(func);
+        functions[name] = (Function)std::make_unique<ConcreteFunction<Return, Args...>>(func);
     }
 
     template <typename T>
