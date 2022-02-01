@@ -778,12 +778,52 @@ struct While : Statement {
 };
 
 struct Program {
-    Program(std::shared_ptr<Scope> scope) : scope(scope){};
+    template <typename Return, typename... Args>
+    void bind(std::string name, Return (*func)(Args...)) {
+        functions[name] = (Function)std::make_unique<FunctionInstance<Return, Args...>>(func);
+    }
+
+    template <typename T>
+    struct TypeBindHelper {
+        TypeBindHelper(std::string type_name, std::map<std::string, Object>& types)
+            : type_name(type_name),
+              object(std::make_unique<ConcreteObject<T>>(T(), type_name)),
+              types(types) {
+            type_id_to_name[LLC_TYPE_ID(T)] = type_name;
+        };
+        ~TypeBindHelper() { types[type_name] = Object(std::move(object)); }
+
+        template <typename M>
+        TypeBindHelper& bind(std::string id, M T::*ptr) {
+            using U = typename ConcreteObject<T>::template ConcreteAccessor<M>;
+            auto it = type_id_to_name.find(LLC_TYPE_ID(M));
+            if (it == type_id_to_name.end())
+                fatal("cannot bind \"", id, "\" because its type is unknown");
+            object->accessors[id] = std::make_shared<U>(ptr, it->second);
+            return *this;
+        }
+
+        std::string type_name;
+        std::unique_ptr<ConcreteObject<T>> object;
+        std::map<std::string, Object>& types;
+    };
+
+    template <typename T>
+    TypeBindHelper<T> bind(std::string name) {
+        return TypeBindHelper<T>(name, types);
+    }
 
     void run() { scope->run(*scope); }
 
+    Object operator[](std::string name) const { return scope->variables[name]; }
+
   private:
     std::shared_ptr<Scope> scope;
+    std::map<std::string, Function> functions;
+    std::map<std::string, Object> types;
+
+    friend struct Compiler;
+    friend struct Parser;
 };
 
 }  // namespace llc

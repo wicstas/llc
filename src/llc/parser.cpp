@@ -36,9 +36,9 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 scope->statements.push_back(
                     std::make_shared<FunctionCall>(build_functioncall(scope, *function)));
 
-            } else if (registered_functions.find(token->id) != registered_functions.end()) {
+            } else if (program->functions.find(token->id) != program->functions.end()) {
                 scope->statements.push_back(std::make_shared<FunctionCall>(
-                    build_functioncall(scope, registered_functions.find(token->id)->second)));
+                    build_functioncall(scope, program->functions.find(token->id)->second)));
 
             } else if (token->id == "struct") {
                 declare_struct(scope);
@@ -285,9 +285,9 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             else if (auto function = scope->find_function(token.id)) {
                 expression.operands.push_back(
                     std::make_shared<FunctionCallOp>(build_functioncall(scope, *function)));
-            } else if (registered_functions.find(token.id) != registered_functions.end()) {
+            } else if (program->functions.find(token.id) != program->functions.end()) {
                 expression.operands.push_back(std::make_shared<FunctionCallOp>(
-                    build_functioncall(scope, registered_functions.find(token.id)->second)));
+                    build_functioncall(scope, program->functions.find(token.id)->second)));
             } else {
                 fatal("\"", token.id, "\" is neither a function nor a variable:\n", token.location(source));
             }

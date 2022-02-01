@@ -14,52 +14,20 @@ struct Parser {
     Parser(const Parser&) = delete;
     Parser& operator=(const Parser&) = delete;
 
-    Program parse(std::string source, std::vector<Token> tokens) {
+    void parse(std::string source, std::vector<Token> tokens, Program* program) {
         this->source = source;
         this->tokens = tokens;
-        pos = 0;
+        this->program = program;
+        this->pos = 0;
+
+        LLC_CHECK(program != nullptr);
 
         std::shared_ptr<Scope> scope = std::make_shared<Scope>();
-        for (const auto& type : registered_types)
+        for (const auto& type : program->types)
             scope->types[type.first] = type.second;
 
         parse_recursively(scope);
-        return scope;
-    }
-
-    template <typename Return, typename... Args>
-    void bind(std::string name, Return (*func)(Args...)) {
-        registered_functions[name] = (Function)std::make_unique<FunctionInstance<Return, Args...>>(func);
-    }
-
-    template <typename T>
-    struct TypeBindHelper {
-        TypeBindHelper(std::string type_name, Parser& parser)
-            : type_name(type_name),
-              object(std::make_unique<ConcreteObject<T>>(T(), type_name)),
-              parser(parser){
-                  type_id_to_name[LLC_TYPE_ID(T)] = type_name;
-              };
-        ~TypeBindHelper() { parser.registered_types[type_name] = Object(std::move(object)); }
-
-        template <typename M>
-        TypeBindHelper& bind(std::string id, M T::*ptr) {
-            using U = typename ConcreteObject<T>::template ConcreteAccessor<M>;
-            auto it = type_id_to_name.find(LLC_TYPE_ID(M));
-            if (it == type_id_to_name.end())
-                fatal("cannot bind \"", id, "\" because its type is unknown");
-            object->accessors[id] = std::make_shared<U>(ptr, it->second);
-            return *this;
-        }
-
-        std::string type_name;
-        std::unique_ptr<ConcreteObject<T>> object;
-        Parser& parser;
-    };
-
-    template <typename T>
-    TypeBindHelper<T> bind(std::string name) {
-        return TypeBindHelper<T>(name, *this);
+        program->scope = scope;
     }
 
   private:
@@ -105,11 +73,7 @@ struct Parser {
     std::string source;
     std::vector<Token> tokens;
     size_t pos;
-
-    std::map<std::string, Function> registered_functions;
-    std::map<std::string, Object> registered_types;
-
-    friend struct Compiler;
+    Program* program = nullptr;
 };
 
 }  // namespace llc

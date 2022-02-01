@@ -3,39 +3,59 @@
 using namespace llc;
 
 struct Bear {
+    std::string name;
     float weight;
     float attack;
     float defence;
 };
 
-void print_bear(Bear bear) {
-    print("A bear:");
-    print("  weight:", bear.weight);
-    print("  attack:", bear.attack);
-    print("  defence:", bear.defence);
+struct Population {
+    Bear bear;
+};
+
+void print_population(Population population) {
+    print("Population:");
+
+    Bear bear = population.bear;
+    print("  Bear: ", bear.name);
+    print("    weight : ", bear.weight);
+    print("    attack : ", bear.attack);
+    print("    defence: ", bear.defence);
 }
 
 int main() {
     std::string source = R"(
+        Population population;
+
         Bear bear;
+        bear.name = "The chosen one";
         bear.weight = 200.0f;
-        bear.attack = 10.0f;
-        bear.defence = 5.0f;
-        print_bear(bear);
+        bear.attack = 12.0f;
+        bear.defence = 8.0f;
+        population.bear = bear;
+
+        print_population(population);
     )";
 
-    Compiler compiler;
+    Program program;
 
-    compiler.bind<Bear>("Bear")
+    program.bind<std::string>("string");
+
+    program.bind<Bear>("Bear")
+        .bind("name", &Bear::name)
         .bind("weight", &Bear::weight)
         .bind("attack", &Bear::attack)
         .bind("defence", &Bear::defence);
 
-    compiler.bind("printf", print<float>);
-    compiler.bind("print_bear", print_bear);
+    program.bind<Population>("Population").bind("bear", &Population::bear);
 
-    Program program = compiler.compile(source);
+    program.bind("print_population", print_population);
+
+    Compiler compiler;
+    compiler.compile(program, source);
     program.run();
+
+    print_population(program["population"].as<Population>());
 
     return 0;
 }

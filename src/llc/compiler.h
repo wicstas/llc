@@ -7,19 +7,9 @@
 namespace llc {
 
 struct Compiler {
-    template <typename F>
-    void bind(std::string name, F func) {
-        parser.bind(name, func);
-    }
-
-    template <typename T>
-    auto bind(std::string name) {
-        return parser.bind<T>(name);
-    }
-
-    Program compile(std::string source) {
+    void compile(Program& program, std::string source) {
         auto tokens = tokenizer.tokenize(source);
-        return parser.parse(source, tokens);
+        parser.parse(source, tokens, &program);
     }
 
   private:
