@@ -155,9 +155,6 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
 void Parser::declare_variable(std::shared_ptr<Scope> scope) {
     auto type_token = must_match(TokenType::Identifier);
     auto type = must_has(scope->find_type(type_token.id), type_token);
-    int n_ptr = 0;
-    while (match(TokenType::Star))
-        n_ptr++;
     auto var_token = must_match(TokenType::Identifier);
     auto var = scope->variables[var_token.id] = *type;
 

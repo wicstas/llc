@@ -154,14 +154,16 @@ struct ConcreteObject : BaseObject {
 
 struct Object {
     Object() : base(nullptr){};
-    explicit Object(std::unique_ptr<BaseObject> base) : base(std::move(base)) { LLC_CHECK(base != nullptr); };
+    explicit Object(std::unique_ptr<BaseObject> base) : base(std::move(base)) {
+        LLC_CHECK(this->base != nullptr);
+    };
     template <typename T>
     explicit Object(T instance, std::string type_name)
         : base(std::make_unique<ConcreteObject<T>>(instance, type_name)) {}
 
     Object(const Object& rhs) {
-        LLC_CHECK(rhs.base != nullptr);
-        base.reset(rhs.base->clone());
+        if (rhs.base != nullptr)
+            base.reset(rhs.base->clone());
     };
     Object(Object&&) = default;
     Object& operator=(Object rhs) {
@@ -271,11 +273,13 @@ struct FunctionInstance : ExternalFunction {
 
 struct Function {
     Function() : base(nullptr){};
-    Function(std::unique_ptr<BaseFunction> base) : base(std::move(base)) { LLC_CHECK(base != nullptr); };
+    Function(std::unique_ptr<BaseFunction> base) : base(std::move(base)) {
+        LLC_CHECK(this->base != nullptr);
+    };
 
     Function(const Function& rhs) {
-        LLC_CHECK(rhs.base != nullptr);
-        base.reset(rhs.base->clone());
+        if (rhs.base != nullptr)
+            base.reset(rhs.base->clone());
     };
     Function(Function&&) = default;
     Function& operator=(Function rhs) {
@@ -310,9 +314,9 @@ struct Scope : Statement {
 
     std::shared_ptr<Scope> parent;
     std::vector<std::shared_ptr<Statement>> statements;
-    std::map<std::string, Object> types;
-    std::map<std::string, Object> variables;
-    std::map<std::string, Function> functions;
+    mutable std::map<std::string, Object> types;
+    mutable std::map<std::string, Object> variables;
+    mutable std::map<std::string, Function> functions;
 };
 
 struct Operand {
@@ -394,7 +398,7 @@ struct StringLiteral : BaseOp {
 };
 
 struct LvalueOp {
-    virtual Object get(const Scope& scope) const = 0;
+    virtual Object& get(const Scope& scope) const = 0;
 };
 
 struct VariableOp : BaseOp, LvalueOp {
@@ -408,16 +412,12 @@ struct VariableOp : BaseOp, LvalueOp {
     }
 
     Object assign(const Scope& scope, const Object& value) override {
-        if (auto var = scope.find_variable(name))
-            return *var = value;
-        LLC_CHECK(false);
-        return {};
+        LLC_CHECK(scope.find_variable(name).has_value());
+        return scope.variables[name] = value;
     }
-    Object get(const Scope& scope) const override {
-        if (auto var = scope.find_variable(name))
-            return *var;
-        LLC_CHECK(false);
-        return {};
+    Object& get(const Scope& scope) const override {
+        LLC_CHECK(scope.find_variable(name).has_value());
+        return scope.variables[name];
     }
 
     int get_precedence() const override { return precedence; }

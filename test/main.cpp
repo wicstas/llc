@@ -10,8 +10,7 @@ struct Bear {
 
 int main() {
     std::string source = R"(
-        Bear bear;
-        float size = 1.0f;
+        float size = 1.2f;
         printf(size);
     )";
 

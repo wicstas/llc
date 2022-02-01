@@ -23,11 +23,10 @@ std::string Location::operator()(const std::string& source) {
 }
 
 Scope::Scope() {
-    types["int"] = {};
-    types["float"] = {};
-    types["bool"] = {};
-    types["string"] = {};
-    types["void"] = {};
+    types["int"] = Object(0, "int");
+    types["float"] = Object(0.0f, "float");
+    types["double"] = Object(0.0, "double");
+    types["bool"] = Object(false, "bool");
 }
 Object Scope::run(const Scope&) const {
     for (const auto& statement : statements)
