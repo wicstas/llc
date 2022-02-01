@@ -2,10 +2,18 @@
 
 namespace llc {
 
-static inline bool is_digit(char c) { return '0' <= c && c <= '9'; }
-static inline bool is_space(char c) { return c == ' ' || c == '\t' || c == '\f'; }
-static inline bool is_newline(char c) { return c == '\n' || c == '\r'; }
-static inline bool is_alpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');}
+static inline bool is_digit(char c) {
+    return '0' <= c && c <= '9';
+}
+static inline bool is_space(char c) {
+    return c == ' ' || c == '\t' || c == '\f';
+}
+static inline bool is_newline(char c) {
+    return c == '\n' || c == '\r';
+}
+static inline bool is_alpha(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
 
 char Tokenizer::next() {
     if (current_char_offset == source_char_count)
@@ -140,14 +148,14 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
         }
         comment = false;
 
-        if (tokens.back().type == TokenType::Eof)
+        if (tokens.size() && tokens.back().type == TokenType::Eof)
             break;
 
         skip(text);
         start_offset = current_char_offset;
     }
 
-    if (tokens.back().type != TokenType::Eof) {
+    if (tokens.size() == 0 || tokens.back().type != TokenType::Eof) {
         Token token;
         token.type = TokenType::Eof;
         tokens.push_back(token);

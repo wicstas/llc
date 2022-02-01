@@ -20,7 +20,6 @@ struct Location {
         lhs.length += rhs.length;
         return lhs;
     }
-
     std::string operator()(const std::string& source);
 
     int line = -1;
@@ -60,8 +59,12 @@ enum class TokenType : uint64_t {
     NumTokens = 1ul << 28
 };
 
-inline TokenType operator|(TokenType a, TokenType b) { return (TokenType)((uint64_t)a | (uint64_t)b); }
-inline uint64_t operator&(TokenType a, TokenType b) { return (uint64_t)a & (uint64_t)b; }
+inline TokenType operator|(TokenType a, TokenType b) {
+    return (TokenType)((uint64_t)a | (uint64_t)b);
+}
+inline uint64_t operator&(TokenType a, TokenType b) {
+    return (uint64_t)a & (uint64_t)b;
+}
 
 std::string enum_to_string(TokenType type);
 
@@ -79,38 +82,185 @@ struct Expression;
 
 extern std::map<size_t, std::string> type_id_to_name;
 
+template <typename T>
+std::string get_type_name() {
+    auto it = type_id_to_name.find(typeid(T).hash_code());
+    if (it == type_id_to_name.end())
+        fatal("unknown type \"", typeid(T).name(), "\"");
+    return it->second;
+}
+
+struct Object;
+
 struct BaseObject {
     BaseObject(std::string type_name) : type_name_(type_name){};
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
-    virtual void copy(void* ptr, std::string type_name) const = 0;
+    virtual void* ptr() const = 0;
     virtual void assign(const BaseObject* src) = 0;
     virtual void add(BaseObject* rhs) = 0;
     virtual void sub(BaseObject* rhs) = 0;
     virtual void mul(BaseObject* rhs) = 0;
     virtual void div(BaseObject* rhs) = 0;
-    virtual BaseObject* get_member(std::string name) = 0;
-    std::string type_name() const { return type_name_; }
+    virtual bool less_than(BaseObject* rhs) const = 0;
+    virtual bool less_equal(BaseObject* rhs) const = 0;
+    virtual bool greater_than(BaseObject* rhs) const = 0;
+    virtual bool greater_equal(BaseObject* rhs) const = 0;
+    virtual bool equal(BaseObject* rhs) const = 0;
+    virtual bool not_equal(BaseObject* rhs) const = 0;
+
+    std::string type_name() const {
+        return type_name_;
+    }
+    Object& operator[](std::string name);
+
+    mutable std::map<std::string, Object> members;
 
   private:
     std::string type_name_;
 };
 
+struct Object {
+    Object() : base(nullptr){};
+    explicit Object(std::unique_ptr<BaseObject> base) {
+        LLC_CHECK(base != nullptr);
+        this->base = std::move(base);
+    }
+    template <typename T, typename = typename std::enable_if<
+                              !std::is_convertible<T, std::unique_ptr<BaseObject>>::value>::type>
+    explicit Object(T instance);
+
+    Object(const Object& rhs) {
+        if (rhs.base != nullptr)
+            base.reset(rhs.base->clone());
+    }
+    Object(Object&&) = default;
+    Object& operator=(Object rhs) {
+        swap(rhs);
+        return *this;
+    }
+    void swap(Object& rhs) {
+        std::swap(base, rhs.base);
+    }
+
+    void assign(const Object& rhs) {
+        LLC_CHECK(base != nullptr);
+        if (type_name() != rhs.type_name())
+            fatal("cannot assign type \"", rhs.type_name(), "\" to type \"", type_name(), "\"");
+        base->assign(rhs.base.get());
+    }
+
+    template <typename T>
+    T as() const {
+        LLC_CHECK(base != nullptr);
+        if (type_name() != get_type_name<T>())
+            fatal("cannot convert type \"", type_name(), "\" to type \"",
+                  get_type_name<std::decay_t<T>>(), "\"");
+        return *(std::decay_t<T>*)base->ptr();
+    }
+
+    std::string type_name() const {
+        LLC_CHECK(base != nullptr);
+        return base->type_name();
+    }
+
+    Object& operator+=(const Object& rhs) {
+        LLC_CHECK(rhs.base != nullptr);
+        base->add(rhs.base.get());
+        return *this;
+    }
+    Object& operator-=(const Object& rhs) {
+        LLC_CHECK(rhs.base != nullptr);
+        base->sub(rhs.base.get());
+        return *this;
+    }
+    Object& operator*=(const Object& rhs) {
+        LLC_CHECK(rhs.base != nullptr);
+        base->mul(rhs.base.get());
+        return *this;
+    }
+    Object& operator/=(const Object& rhs) {
+        LLC_CHECK(rhs.base != nullptr);
+        base->div(rhs.base.get());
+        return *this;
+    }
+    friend Object operator+(Object lhs, const Object& rhs) {
+        return lhs += rhs;
+    }
+    friend Object operator-(Object lhs, const Object& rhs) {
+        return lhs -= rhs;
+    }
+    friend Object operator*(Object lhs, const Object& rhs) {
+        return lhs *= rhs;
+    }
+    friend Object operator/(Object lhs, const Object& rhs) {
+        return lhs /= rhs;
+    }
+    friend bool operator<(const Object& lhs, const Object& rhs) {
+        LLC_CHECK(lhs.base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
+        return lhs.base->less_than(rhs.base.get());
+    }
+    friend bool operator<=(const Object& lhs, const Object& rhs) {
+        LLC_CHECK(lhs.base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
+        return lhs.base->less_equal(rhs.base.get());
+    }
+    friend bool operator>(const Object& lhs, const Object& rhs) {
+        LLC_CHECK(lhs.base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
+        return lhs.base->greater_than(rhs.base.get());
+    }
+    friend bool operator>=(const Object& lhs, const Object& rhs) {
+        LLC_CHECK(lhs.base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
+        return lhs.base->greater_equal(rhs.base.get());
+    }
+    friend bool operator==(const Object& lhs, const Object& rhs) {
+        LLC_CHECK(lhs.base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
+        return lhs.base->equal(rhs.base.get());
+    }
+    friend bool operator!=(const Object& lhs, const Object& rhs) {
+        LLC_CHECK(lhs.base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
+        return lhs.base->not_equal(rhs.base.get());
+    }
+
+    Object& operator[](std::string name) {
+        LLC_CHECK(base != nullptr);
+        return (*base)[name];
+    }
+
+    std::unique_ptr<BaseObject> base;
+};
+
+inline Object& BaseObject::operator[](std::string name) {
+    LLC_CHECK(members.find(name) != members.end());
+    return members[name];
+}
+
 template <typename T>
 struct ConcreteObject : BaseObject {
-    ConcreteObject(T value, std::string type_name) : BaseObject(type_name), value(value){};
-    virtual BaseObject* clone() const override { return new ConcreteObject<T>(*this); }
+    ConcreteObject(T value) : BaseObject(get_type_name<T>()), value(value){};
 
-    void copy(void* ptr, std::string type_name) const override {
-        using Ty = typename std::decay<T>::type;
-        if (type_name != this->type_name())
-            fatal("cannot convert type \"", this->type_name(), "\" to type \"", type_name, "\"");
-        *((Ty*)ptr) = value;
+    virtual BaseObject* clone() const override {
+        ConcreteObject<T>* object = new ConcreteObject<T>(*this);
+        object->construct();
+        return object;
+    }
+
+    void* ptr() const override {
+        return (void*)&value;
     }
     void assign(const BaseObject* src) override {
-        if (!std::is_reference<T>::value)
-            fatal("assign to rvalue");
-        src->copy(&value, type_name());
+        using Ty = typename std::decay_t<T>;
+        value = *(Ty*)src->ptr();
+    }
+
+    void construct() {
+        for (const auto& accessor : accessors)
+            members[accessor.first] = accessor.second->access(value);
     }
 
     void add(BaseObject* rhs) override {
@@ -149,127 +299,198 @@ struct ConcreteObject : BaseObject {
         else
             fatal("type \"", type_name(), "\" does not have operator \"/\"");
     }
+    virtual bool less_than(BaseObject* rhs) const override {
+        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
+        LLC_CHECK(ptr != nullptr);
+
+        if constexpr (HasOperatorLT<T>::value)
+            return value < ptr->value;
+        else
+            fatal("type \"", type_name(), "\" does not have operator \"<\"");
+        return {};
+    }
+    virtual bool less_equal(BaseObject* rhs) const override {
+        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
+        LLC_CHECK(ptr != nullptr);
+
+        if constexpr (HasOperatorLE<T>::value)
+            return value <= ptr->value;
+        else
+            fatal("type \"", type_name(), "\" does not have operator \"<=\"");
+        return {};
+    }
+    virtual bool greater_than(BaseObject* rhs) const override {
+        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
+        LLC_CHECK(ptr != nullptr);
+
+        if constexpr (HasOperatorGT<T>::value)
+            return value > ptr->value;
+        else
+            fatal("type \"", type_name(), "\" does not have operator \">\"");
+        return {};
+    }
+    virtual bool greater_equal(BaseObject* rhs) const override {
+        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
+        LLC_CHECK(ptr != nullptr);
+
+        if constexpr (HasOperatorGE<T>::value)
+            return value >= ptr->value;
+        else
+            fatal("type \"", type_name(), "\" does not have operator \">=\"");
+        return {};
+    }
+    virtual bool equal(BaseObject* rhs) const override {
+        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
+        LLC_CHECK(ptr != nullptr);
+
+        if constexpr (HasOperatorEQ<T>::value)
+            return value == ptr->value;
+        else
+            fatal("type \"", type_name(), "\" does not have operator \"==\"");
+        return {};
+    }
+    virtual bool not_equal(BaseObject* rhs) const override {
+        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
+        LLC_CHECK(ptr != nullptr);
+
+        if constexpr (HasOperatorNE<T>::value)
+            return value != ptr->value;
+        else
+            fatal("type \"", type_name(), "\" does not have operator \"!=\"");
+        return {};
+    }
 
     struct Accessor {
         virtual ~Accessor() = default;
-        virtual BaseObject* access(T& object) const = 0;
+        virtual Object access(T& object) const = 0;
     };
 
     template <typename M>
     struct ConcreteAccessor : Accessor {
-        ConcreteAccessor(M T::*ptr, std::string type_name) : ptr(ptr), type_name(type_name) {}
+        ConcreteAccessor(M T::*ptr) : ptr(ptr) {
+        }
 
-        BaseObject* access(T& object) const override {
-            return new ConcreteObject<M&>(object.*ptr, type_name);
+        Object access(T& object) const override {
+            return Object(std::make_unique<ConcreteObject<M&>>(object.*ptr));
         }
 
         M T::*ptr;
-        std::string type_name;
     };
-
-    BaseObject* get_member(std::string name) override {
-        auto it = accessors.find(name);
-        LLC_CHECK(it != accessors.end());
-        return it->second->access(value);
-    }
 
     T value;
     std::map<std::string, std::shared_ptr<Accessor>> accessors;
 };
 
-struct Object {
-    Object() : base(nullptr){};
-    explicit Object(std::unique_ptr<BaseObject> base) : base(std::move(base)) {
-        LLC_CHECK(this->base != nullptr);
+struct InternalObject : BaseObject {
+    using BaseObject::BaseObject;
+
+    BaseObject* clone() const override {
+        return new InternalObject(*this);
+    }
+
+    void* ptr() const override {
+        fatal("cannot get pointer to internal type");
+        return nullptr;
     };
-    template <typename T>
-    explicit Object(T instance, std::string type_name)
-        : base(std::make_unique<ConcreteObject<T>>(instance, type_name)) {}
-
-    Object(const Object& rhs) {
-        if (rhs.base != nullptr)
-            base.reset(rhs.base->clone());
-    };
-    Object(Object&&) = default;
-    Object& operator=(Object rhs) {
-        swap(rhs);
-        return *this;
+    void assign(const BaseObject* src) override {
+        auto ptr = dynamic_cast<const InternalObject*>(src);
+        if (ptr == nullptr)
+            fatal("assign external type to internal type is not allowed");
+        for (auto& member : ptr->members)
+            members[member.first] = member.second;
     }
-    void swap(Object& rhs) { std::swap(base, rhs.base); }
-
-    void assign(const Object& rhs) {
-        LLC_CHECK(base != nullptr);
-        base->assign(rhs.base.get());
+    void add(BaseObject* rhs) override {
+        auto ptr = dynamic_cast<const InternalObject*>(rhs);
+        if (ptr == nullptr)
+            fatal("add external type to internal type is not allowed");
+        for (auto& member : ptr->members)
+            members[member.first] += member.second;
     }
-
-    template <typename T>
-    T as() const {
-        LLC_CHECK(base != nullptr);
-        T value;
-        auto it = type_id_to_name.find(LLC_TYPE_ID(T));
-        if (it == type_id_to_name.end())
-            fatal("unknown type \"", typeid(T).name(), "\"");
-        base->copy(&value, it->second);
-        return value;
+    void sub(BaseObject* rhs) override {
+        auto ptr = dynamic_cast<const InternalObject*>(rhs);
+        if (ptr == nullptr)
+            fatal("subtract internal type by internal type is not allowed");
+        for (auto& member : ptr->members)
+            members[member.first] -= member.second;
     }
-
-    std::string type_name() const {
-        LLC_CHECK(base != nullptr);
-        return base->type_name();
+    void mul(BaseObject* rhs) override {
+        auto ptr = dynamic_cast<const InternalObject*>(rhs);
+        if (ptr == nullptr)
+            fatal("multiply internal type by internal type is not allowed");
+        for (auto& member : ptr->members)
+            members[member.first] *= member.second;
     }
-
-    Object operator[](std::string member_id) {
-        LLC_CHECK(base != nullptr);
-        std::unique_ptr<BaseObject> object(base->get_member(member_id));
-        return Object(std::move(object));
+    void div(BaseObject* rhs) override {
+        auto ptr = dynamic_cast<const InternalObject*>(rhs);
+        if (ptr == nullptr)
+            fatal("divide internal type by internal type is not allowed");
+        for (auto& member : ptr->members)
+            members[member.first] /= member.second;
     }
-
-    Object& operator+=(const Object& rhs) {
-        LLC_CHECK(rhs.base != nullptr);
-        base->add(rhs.base.get());
-        return *this;
+    bool less_than(BaseObject* rhs) const override {
+        for (const auto& it : rhs->members)
+            if (members[it.first] >= it.second)
+                return false;
+        return true;
     }
-    Object& operator-=(const Object& rhs) {
-        LLC_CHECK(rhs.base != nullptr);
-        base->sub(rhs.base.get());
-        return *this;
+    bool less_equal(BaseObject* rhs) const override {
+        for (const auto& it : rhs->members)
+            if (members[it.first] > it.second)
+                return false;
+        return true;
     }
-    Object& operator*=(const Object& rhs) {
-        LLC_CHECK(rhs.base != nullptr);
-        base->mul(rhs.base.get());
-        return *this;
+    bool greater_than(BaseObject* rhs) const override {
+        for (const auto& it : rhs->members)
+            if (members[it.first] <= it.second)
+                return false;
+        return true;
     }
-    Object& operator/=(const Object& rhs) {
-        LLC_CHECK(rhs.base != nullptr);
-        base->div(rhs.base.get());
-        return *this;
+    bool greater_equal(BaseObject* rhs) const override {
+        for (const auto& it : rhs->members)
+            if (members[it.first] < it.second)
+                return false;
+        return true;
     }
-    friend Object operator+(Object lhs, const Object& rhs) { return lhs += rhs; }
-    friend Object operator-(Object lhs, const Object& rhs) { return lhs -= rhs; }
-    friend Object operator*(Object lhs, const Object& rhs) { return lhs *= rhs; }
-    friend Object operator/(Object lhs, const Object& rhs) { return lhs /= rhs; }
-
-  private:
-    std::unique_ptr<BaseObject> base;
+    bool equal(BaseObject* rhs) const override {
+        for (const auto& it : rhs->members)
+            if (members[it.first] != it.second)
+                return false;
+        return true;
+    }
+    bool not_equal(BaseObject* rhs) const override {
+        for (const auto& it : rhs->members)
+            if (members[it.first] != it.second)
+                return true;
+        return false;
+    }
 };
+
+template <typename T, typename>
+Object::Object(T instance) : base(std::make_unique<ConcreteObject<T>>(instance)) {
+}
 
 struct BaseFunction {
     virtual ~BaseFunction() = default;
     virtual BaseFunction* clone() const = 0;
-    virtual Object run(const Scope& scope, const std::vector<Expression>& exprs) const = 0;
+    virtual std::optional<Object> run(const Scope& scope,
+                                      const std::vector<Expression>& exprs) const = 0;
 };
 
 struct InternalFunction : BaseFunction {
-    BaseFunction* clone() const override { return new InternalFunction(*this); }
-    Object run(const Scope& scope, const std::vector<Expression>& exprs) const override;
+    BaseFunction* clone() const override {
+        return new InternalFunction(*this);
+    }
+    std::optional<Object> run(const Scope& scope,
+                              const std::vector<Expression>& exprs) const override;
 
-    Object return_type;
+    std::optional<Object> return_type;
     std::shared_ptr<Scope> definition;
     std::vector<std::string> parameters;
 };
 
 struct ExternalFunction : BaseFunction {
-    Object run(const Scope& scope, const std::vector<Expression>& exprs) const override;
+    std::optional<Object> run(const Scope& scope,
+                              const std::vector<Expression>& exprs) const override;
 
   protected:
     virtual Object invoke(const std::vector<Object>& args) const = 0;
@@ -280,7 +501,9 @@ struct FunctionInstance : ExternalFunction {
     using F = Return (*)(Args...);
     FunctionInstance(F f) : f(f){};
 
-    BaseFunction* clone() const override { return new FunctionInstance<Return, Args...>(*this); }
+    BaseFunction* clone() const override {
+        return new FunctionInstance<Return, Args...>(*this);
+    }
 
     Object invoke(const std::vector<Object>& args) const override {
         LLC_CHECK(args.size() == sizeof...(Args));
@@ -293,7 +516,7 @@ struct FunctionInstance : ExternalFunction {
                 f(args[0].as<decltype(types.template at<0>())>());
             else if constexpr (sizeof...(Args) == 2)
                 f(args[0].as<decltype(types.template at<0>())>(),
-                  args[0].as<decltype(types.template at<1>())>());
+                  args[1].as<decltype(types.template at<1>())>());
             else
                 fatal("too many arguments, only support <= 4");
 
@@ -304,7 +527,7 @@ struct FunctionInstance : ExternalFunction {
                 return f(args[0].as<decltype(types.template at<0>())>());
             else if constexpr (sizeof...(Args) == 2)
                 return f(args[0].as<decltype(types.template at<0>())>(),
-                         args[0].as<decltype(types.template at<1>())>());
+                         args[1].as<decltype(types.template at<1>())>());
             else
                 fatal("too many arguments, only support <= 4");
         }
@@ -319,20 +542,22 @@ struct Function {
     Function() : base(nullptr){};
     Function(std::unique_ptr<BaseFunction> base) : base(std::move(base)) {
         LLC_CHECK(this->base != nullptr);
-    };
+    }
 
     Function(const Function& rhs) {
         if (rhs.base != nullptr)
             base.reset(rhs.base->clone());
-    };
+    }
     Function(Function&&) = default;
     Function& operator=(Function rhs) {
         swap(rhs);
         return *this;
     }
-    void swap(Function& rhs) { std::swap(base, rhs.base); }
+    void swap(Function& rhs) {
+        std::swap(base, rhs.base);
+    }
 
-    Object run(const Scope& scope, const std::vector<Expression>& exprs) const {
+    std::optional<Object> run(const Scope& scope, const std::vector<Expression>& exprs) const {
         LLC_CHECK(base != nullptr);
         return base->run(scope, exprs);
     }
@@ -344,13 +569,13 @@ struct Function {
 struct Statement {
     virtual ~Statement() = default;
 
-    virtual Object run(const Scope& scope) const = 0;
+    virtual std::optional<Object> run(const Scope& scope) const = 0;
 };
 
 struct Scope : Statement {
     Scope();
 
-    Object run(const Scope& scope) const override;
+    std::optional<Object> run(const Scope& scope) const override;
 
     std::optional<Object> find_type(std::string name) const;
     std::optional<Object> find_variable(std::string name) const;
@@ -366,7 +591,8 @@ struct Scope : Statement {
 struct Operand {
     virtual ~Operand() = default;
 
-    virtual std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) = 0;
+    virtual std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
+                                      int index) = 0;
 
     virtual Object evaluate(const Scope& scope) const = 0;
 
@@ -380,11 +606,14 @@ struct Operand {
 };
 
 struct BaseOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override { return {}; };
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
+        return {};
+    };
 };
 
 struct BinaryOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
+                              int index) override {
         LLC_CHECK(index - 1 >= 0);
         LLC_CHECK(index + 1 < (int)operands.size());
         a = operands[index - 1];
@@ -396,7 +625,8 @@ struct BinaryOp : Operand {
 };
 
 struct PreUnaryOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
+                              int index) override {
         LLC_CHECK(index + 1 >= 0);
         LLC_CHECK(index + 1 < (int)operands.size());
         operand = operands[index + 1];
@@ -407,7 +637,8 @@ struct PreUnaryOp : Operand {
 };
 
 struct PostUnaryOp : Operand {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
+                              int index) override {
         LLC_CHECK(index - 1 >= 0);
         LLC_CHECK(index - 1 < (int)operands.size());
         operand = operands[index - 1];
@@ -420,10 +651,16 @@ struct PostUnaryOp : Operand {
 struct NumberLiteral : BaseOp {
     NumberLiteral(float value) : value(value){};
 
-    Object evaluate(const Scope&) const override { return Object(value, "float"); }
+    Object evaluate(const Scope&) const override {
+        return Object(value);
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
     int precedence = 10;
     float value;
@@ -432,10 +669,16 @@ struct NumberLiteral : BaseOp {
 struct StringLiteral : BaseOp {
     StringLiteral(std::string value) : value(value){};
 
-    Object evaluate(const Scope&) const override { return Object(value, "string"); }
+    Object evaluate(const Scope&) const override {
+        return Object(value);
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
     int precedence = 10;
     std::string value;
@@ -451,7 +694,8 @@ struct VariableOp : BaseOp {
 
     Object assign(const Scope& scope, const Object& value) override {
         LLC_CHECK(scope.find_variable(name).has_value());
-        return scope.variables[name] = value;
+        scope.variables[name].assign(value);
+        return scope.variables[name];
     }
 
     Object& original(const Scope& scope) const {
@@ -459,8 +703,12 @@ struct VariableOp : BaseOp {
         return scope.variables[name];
     }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 10;
     std::string name;
 };
@@ -476,14 +724,18 @@ struct ObjectMember : Operand {
         fatal("ObjectMember::evaluate() shall not be called");
         return {};
     }
-    int get_precedence() const override { return 0; }
-    void set_precedence(int) override {}
+    int get_precedence() const override {
+        return 0;
+    }
+    void set_precedence(int) override {
+    }
 
     std::string name;
 };
 
 struct MemberAccess : BinaryOp {
-    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands, int index) override {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>& operands,
+                              int index) override {
         LLC_CHECK(index - 1 >= 0);
         LLC_CHECK(index + 1 < (int)operands.size());
         a = operands[index - 1];
@@ -496,7 +748,6 @@ struct MemberAccess : BinaryOp {
         auto member = dynamic_cast<ObjectMember*>(b.get());
         LLC_CHECK(variable != nullptr);
         LLC_CHECK(member != nullptr);
-        Object obj = variable->evaluate(scope)[member->name];
         return variable->evaluate(scope)[member->name];
     }
     Object assign(const Scope& scope, const Object& value) override {
@@ -508,8 +759,12 @@ struct MemberAccess : BinaryOp {
         return variable->evaluate(scope)[member->name];
     }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 8;
 };
 
@@ -534,51 +789,87 @@ struct MemberAccess : BinaryOp {
 struct TypeOp : BaseOp {
     TypeOp(Object type) : type(type){};
 
-    Object evaluate(const Scope&) const override { return type; }
+    Object evaluate(const Scope&) const override {
+        return type;
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 8;
     Object type;
 };
 
 struct Assignment : BinaryOp {
-    Object evaluate(const Scope& scope) const override { return a->assign(scope, b->evaluate(scope)); }
+    Object evaluate(const Scope& scope) const override {
+        return a->assign(scope, b->evaluate(scope));
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 0;
 };
 
 struct Addition : BinaryOp {
-    Object evaluate(const Scope& scope) const override { return a->evaluate(scope) + b->evaluate(scope); }
+    Object evaluate(const Scope& scope) const override {
+        return a->evaluate(scope) + b->evaluate(scope);
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 4;
 };
 
 struct Subtraction : BinaryOp {
-    Object evaluate(const Scope& scope) const override { return a->evaluate(scope) - b->evaluate(scope); }
+    Object evaluate(const Scope& scope) const override {
+        return a->evaluate(scope) - b->evaluate(scope);
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 4;
 };
 
 struct Multiplication : BinaryOp {
-    Object evaluate(const Scope& scope) const override { return a->evaluate(scope) * b->evaluate(scope); }
+    Object evaluate(const Scope& scope) const override {
+        return a->evaluate(scope) * b->evaluate(scope);
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 5;
 };
 
 struct Division : BinaryOp {
-    Object evaluate(const Scope& scope) const override { return a->evaluate(scope) / b->evaluate(scope); }
+    Object evaluate(const Scope& scope) const override {
+        return a->evaluate(scope) / b->evaluate(scope);
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
     int precedence = 5;
 };
 
@@ -609,7 +900,8 @@ struct Division : BinaryOp {
 // };
 
 // struct PreIncrement : PreUnaryOp {
-//     Object evaluate(Scope& scope) override { return operand->assign(scope, ++operand->evaluate(scope)); }
+//     Object evaluate(Scope& scope) override { return operand->assign(scope,
+//     ++operand->evaluate(scope)); }
 
 //     int get_precedence() const override { return precedence; }
 //     void set_precedence(int prec) override { precedence = prec; }
@@ -618,7 +910,8 @@ struct Division : BinaryOp {
 // };
 
 // struct PreDecrement : PreUnaryOp {
-//     Object evaluate(Scope& scope) override { return operand->assign(scope, --operand->evaluate(scope)); }
+//     Object evaluate(Scope& scope) override { return operand->assign(scope,
+//     --operand->evaluate(scope)); }
 
 //     int get_precedence() const override { return precedence; }
 //     void set_precedence(int prec) override { precedence = prec; }
@@ -626,53 +919,89 @@ struct Division : BinaryOp {
 //     int precedence = 8;
 // };
 
-// struct LessThan : BinaryOp {
-//     Object evaluate(Scope& scope) override { return a->evaluate(scope) < b->evaluate(scope); }
+struct LessThan : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return Object(a->evaluate(scope) < b->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 2;
-// };
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 2;
+};
 
-// struct LessEqual : BinaryOp {
-//     Object evaluate(Scope& scope) override { return a->evaluate(scope) <= b->evaluate(scope); }
+struct LessEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return Object(a->evaluate(scope) <= b->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 2;
-// };
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 2;
+};
 
-// struct GreaterThan : BinaryOp {
-//     Object evaluate(Scope& scope) override { return a->evaluate(scope) > b->evaluate(scope); }
+struct GreaterThan : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return Object(a->evaluate(scope) > b->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 2;
-// };
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 2;
+};
 
-// struct GreaterEqual : BinaryOp {
-//     Object evaluate(Scope& scope) override { return a->evaluate(scope) >= b->evaluate(scope); }
+struct GreaterEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return Object(a->evaluate(scope) >= b->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 2;
-// };
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 2;
+};
 
-// struct Equal : BinaryOp {
-//     Object evaluate(Scope& scope) override { return a->evaluate(scope) == b->evaluate(scope); }
+struct Equal : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return Object(a->evaluate(scope) == b->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 2;
-// };
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 2;
+};
 
-// struct NotEqual : BinaryOp {
-//     Object evaluate(Scope& scope) override { return a->evaluate(scope) != b->evaluate(scope); }
+struct NotEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return Object(a->evaluate(scope) != b->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
-//     int precedence = 2;
-// };
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 2;
+};
 
 struct LeftParenthese : Operand {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
@@ -683,8 +1012,11 @@ struct LeftParenthese : Operand {
         fatal("LeftParenthese::evaluate() shall not be called");
         return {};
     }
-    int get_precedence() const override { return 0; }
-    void set_precedence(int) override {}
+    int get_precedence() const override {
+        return 0;
+    }
+    void set_precedence(int) override {
+    }
 };
 
 struct RightParenthese : Operand {
@@ -696,28 +1028,35 @@ struct RightParenthese : Operand {
         fatal("RightParenthese::evaluate() shall not be called");
         return {};
     }
-    int get_precedence() const override { return 0; }
-    void set_precedence(int) override {}
+    int get_precedence() const override {
+        return 0;
+    }
+    void set_precedence(int) override {
+    }
 };
 
 struct Expression : Statement {
     void apply_parenthese();
     void collapse();
 
-    Object operator()(const Scope& scope) const {
+    std::optional<Object> operator()(const Scope& scope) const {
         if (operands.size() == 0)
-            return {};
+            return std::nullopt;
         LLC_CHECK(operands.size() == 1);
         return operands[0]->evaluate(scope);
     }
 
-    Object run(const Scope& scope) const override { return this->operator()(scope); }
+    std::optional<Object> run(const Scope& scope) const override {
+        return this->operator()(scope);
+    }
 
     std::vector<std::shared_ptr<Operand>> operands;
 };
 
 struct FunctionCall : Statement {
-    Object run(const Scope& scope) const override { return function.run(scope, arguments); }
+    std::optional<Object> run(const Scope& scope) const override {
+        return function.run(scope, arguments);
+    }
 
     Function function;
     std::vector<Expression> arguments;
@@ -726,10 +1065,19 @@ struct FunctionCall : Statement {
 struct FunctionCallOp : BaseOp {
     FunctionCallOp(FunctionCall function) : function(function){};
 
-    Object evaluate(const Scope& scope) const override { return function.run(scope); }
+    Object evaluate(const Scope& scope) const override {
+        if (auto ret = function.run(scope))
+            return *ret;
+        fatal("function returns void, which cannnot appear in expression");
+        return {};
+    }
 
-    int get_precedence() const override { return precedence; }
-    void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
     int precedence = 10;
     FunctionCall function;
@@ -738,7 +1086,7 @@ struct FunctionCallOp : BaseOp {
 struct Return : Statement {
     Return(Expression expression) : expression(expression){};
 
-    Object run(const Scope& scope) const override {
+    std::optional<Object> run(const Scope& scope) const override {
         auto result = expression(scope);
         throw result;
         return result;
@@ -751,7 +1099,7 @@ struct IfElseChain : Statement {
     IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Scope>> actions)
         : conditions(conditions), actions(actions){};
 
-    Object run(const Scope& scope) const override;
+    std::optional<Object> run(const Scope& scope) const override;
 
     std::vector<Expression> conditions;
     std::vector<std::shared_ptr<Scope>> actions;
@@ -760,18 +1108,22 @@ struct IfElseChain : Statement {
 struct For : Statement {
     For(Expression condition, Expression updation, std::shared_ptr<Scope> internal_scope,
         std::shared_ptr<Scope> action)
-        : condition(condition), updation(updation), internal_scope(internal_scope), action(action){};
+        : condition(condition),
+          updation(updation),
+          internal_scope(internal_scope),
+          action(action){};
 
-    Object run(const Scope& scope) const override;
+    std::optional<Object> run(const Scope& scope) const override;
 
     Expression condition, updation;
     std::shared_ptr<Scope> internal_scope, action;
 };
 
 struct While : Statement {
-    While(Expression condition, std::shared_ptr<Scope> action) : condition(condition), action(action){};
+    While(Expression condition, std::shared_ptr<Scope> action)
+        : condition(condition), action(action){};
 
-    Object run(const Scope& scope) const override;
+    std::optional<Object> run(const Scope& scope) const override;
 
     Expression condition;
     std::shared_ptr<Scope> action;
@@ -786,20 +1138,19 @@ struct Program {
     template <typename T>
     struct TypeBindHelper {
         TypeBindHelper(std::string type_name, std::map<std::string, Object>& types)
-            : type_name(type_name),
-              object(std::make_unique<ConcreteObject<T>>(T(), type_name)),
-              types(types) {
-            type_id_to_name[LLC_TYPE_ID(T)] = type_name;
+            : type_name(type_name), types(types) {
+            type_id_to_name[typeid(T).hash_code()] = type_name;
+            object = std::make_unique<ConcreteObject<T>>(T());
         };
-        ~TypeBindHelper() { types[type_name] = Object(std::move(object)); }
+        ~TypeBindHelper() {
+            object->construct();
+            types[type_name] = Object(std::move(object));
+        }
 
         template <typename M>
         TypeBindHelper& bind(std::string id, M T::*ptr) {
             using U = typename ConcreteObject<T>::template ConcreteAccessor<M>;
-            auto it = type_id_to_name.find(LLC_TYPE_ID(M));
-            if (it == type_id_to_name.end())
-                fatal("cannot bind \"", id, "\" because its type is unknown");
-            object->accessors[id] = std::make_shared<U>(ptr, it->second);
+            object->accessors[id] = std::make_shared<U>(ptr);
             return *this;
         }
 
@@ -813,9 +1164,13 @@ struct Program {
         return TypeBindHelper<T>(name, types);
     }
 
-    void run() { scope->run(*scope); }
+    void run() {
+        scope->run(*scope);
+    }
 
-    Object operator[](std::string name) const { return scope->variables[name]; }
+    Object& operator[](std::string name) const {
+        return scope->variables[name];
+    }
 
   private:
     std::shared_ptr<Scope> scope;

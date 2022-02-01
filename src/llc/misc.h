@@ -21,58 +21,37 @@ void fatal(const Args&... args) {
     abort();
 }
 
-#define LLC_CHECK(x)                                                                                    \
-    do {                                                                                                \
-        if (!(x)) {                                                                                     \
-            fatal("check \"", #x, "\" failed[file \"", __FILE__, "\", line ", __LINE__, ", ", __func__, \
-                  "()]");                                                                               \
-            abort();                                                                                    \
-        }                                                                                               \
+#define LLC_CHECK(x)                                                                          \
+    do {                                                                                      \
+        if (!(x)) {                                                                           \
+            fatal("check \"", #x, "\" failed[file \"", __FILE__, "\", line ", __LINE__, ", ", \
+                  __func__, "()]");                                                           \
+            abort();                                                                          \
+        }                                                                                     \
     } while (false)
-
-#define LLC_TYPE_ID(x) typeid(x).hash_code()
 
 std::vector<std::string> separate_lines(const std::string& source);
 
-template <typename T>
-struct HasOperatorAdd {
-    template <typename U>
-    static constexpr std::true_type check(decltype(std::declval<U>() - std::declval<U>())*);
-    template <typename U>
-    static constexpr std::false_type check(...);
+#define DefineCheckOperator(name, op)                                                             \
+    template <typename T>                                                                         \
+    struct HasOperator##name {                                                                    \
+        template <typename U>                                                                     \
+        static constexpr std::true_type check(decltype(std::declval<U>() op std::declval<U>())*); \
+        template <typename U>                                                                     \
+        static constexpr std::false_type check(...);                                              \
+        static constexpr bool value = decltype(check<T>(0))::value;                               \
+    }
 
-    static constexpr bool value = decltype(check<T>())::value;
-};
-
-template <typename T>
-struct HasOperatorSub {
-    template <typename U>
-    static constexpr std::true_type check(decltype(std::declval<U>() + std::declval<U>())*);
-    template <typename U>
-    static constexpr std::false_type check(...);
-
-    static constexpr bool value = decltype(check<T>())::value;
-};
-
-template <typename T>
-struct HasOperatorMul {
-    template <typename U>
-    static constexpr std::true_type check(decltype(std::declval<U>() * std::declval<U>())*);
-    template <typename U>
-    static constexpr std::false_type check(...);
-
-    static constexpr bool value = decltype(check<T>())::value;
-};
-
-template <typename T>
-struct HasOperatorDiv {
-    template <typename U>
-    static constexpr std::true_type check(decltype(std::declval<U>() / std::declval<U>())*);
-    template <typename U>
-    static constexpr std::false_type check(...);
-
-    static constexpr bool value = decltype(check<T>())::value;
-};
+DefineCheckOperator(Add, +);
+DefineCheckOperator(Sub, -);
+DefineCheckOperator(Mul, *);
+DefineCheckOperator(Div, /);
+DefineCheckOperator(LT, <);
+DefineCheckOperator(LE, <=);
+DefineCheckOperator(GT, >);
+DefineCheckOperator(GE, >=);
+DefineCheckOperator(EQ, ==);
+DefineCheckOperator(NE, !=);
 
 template <typename... Ts>
 struct TypePack;

@@ -4,7 +4,7 @@ IndentCaseLabels: false
 PointerBindsToType: true
 Standard: Cpp11
 IndentWidth: 4
-AllowShortFunctionsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AllowShortLambdasOnASingleLine: true
@@ -13,5 +13,5 @@ AlwaysBreakBeforeMultilineStrings: false
 IncludeBlocks: Preserve
 AllowAllConstructorInitializersOnNextLine: true
 MaxEmptyLinesToKeep: 1
-ColumnLimit: 110
+ColumnLimit: 100
 SortIncludes: false

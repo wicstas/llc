@@ -5,11 +5,10 @@
 namespace llc {
 
 std::map<size_t, std::string> type_id_to_name = {
-    {LLC_TYPE_ID(int),"int"},
-    {LLC_TYPE_ID(float),"float"},
-    {LLC_TYPE_ID(double),"double"},
-    {LLC_TYPE_ID(bool),"bool"},
-    };
+    {typeid(int).hash_code(), "int"},       {typeid(float).hash_code(), "float"},
+    {typeid(double).hash_code(), "double"}, {typeid(std::string).hash_code(), "string"},
+    {typeid(bool).hash_code(), "bool"},
+};
 
 std::string Location::operator()(const std::string& source) {
     LLC_CHECK(line >= 0);
@@ -45,23 +44,23 @@ std::string enum_to_string(TokenType type) {
 }
 
 Scope::Scope() {
-    types["int"] = Object(0, "int");
-    types["float"] = Object(0.0f, "float");
-    types["double"] = Object(0.0, "double");
-    types["bool"] = Object(false, "bool");
+    types["int"] = Object(0);
+    types["float"] = Object(0.0f);
+    types["double"] = Object(0.0);
+    types["bool"] = Object(false);
 }
-Object Scope::run(const Scope&) const {
+std::optional<Object> Scope::run(const Scope&) const {
     for (const auto& statement : statements)
         LLC_CHECK(statement != nullptr);
 
     for (const auto& statement : statements) {
         try {
             statement->run(*this);
-        } catch (const Object& result) {
+        } catch (const std::optional<Object>& result) {
             return result;
         }
     }
-    return {};
+    return std::nullopt;
 }
 std::optional<Object> Scope::find_type(std::string name) const {
     auto it = types.find(name);
@@ -85,7 +84,8 @@ std::optional<Function> Scope::find_function(std::string name) const {
         return it->second;
 }
 
-Object InternalFunction::run(const Scope& scope, const std::vector<Expression>& exprs) const {
+std::optional<Object> InternalFunction::run(const Scope& scope,
+                                            const std::vector<Expression>& exprs) const {
     LLC_CHECK(parameters.size() == exprs.size());
     LLC_CHECK(definition != nullptr);
 
@@ -93,16 +93,24 @@ Object InternalFunction::run(const Scope& scope, const std::vector<Expression>& 
         LLC_CHECK(definition->variables.find(parameters[i]) != definition->variables.end());
 
     for (int i = 0; i < (int)exprs.size(); i++)
-        definition->variables[parameters[i]] = exprs[i](scope);
+        if (auto ret = exprs[i](scope))
+            definition->variables[parameters[i]] = *ret;
+        else
+            fatal("void cannot be used as function parameter");
 
     return definition->run(scope);
 }
 
-Object ExternalFunction::run(const Scope& scope, const std::vector<Expression>& exprs) const {
+std::optional<Object> ExternalFunction::run(const Scope& scope,
+                                            const std::vector<Expression>& exprs) const {
     std::vector<Object> arguments;
 
-    for (auto& expr : exprs)
-        arguments.push_back(expr(scope));
+    for (auto& expr : exprs) {
+        if (auto ret = expr(scope))
+            arguments.push_back(*ret);
+        else
+            fatal("void cannot be passes as argument to function");
+    }
     return invoke(arguments);
 }
 
@@ -154,21 +162,31 @@ void Expression::collapse() {
     }
 }
 
-Object IfElseChain::run(const Scope&) const {
+std::optional<Object> IfElseChain::run(const Scope& scope) const {
     LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
     for (int i = 0; i < (int)actions.size(); i++)
         LLC_CHECK(actions[i] != nullptr);
 
-    // for (int i = 0; i < (int)conditions.size(); i++)
-    //     if (conditions[i](scope))
-    //         return actions[i]->run(scope);
+    for (int i = 0; i < (int)conditions.size(); i++) {
+        try {
+            if (conditions[i](scope))
+                actions[i]->run(scope);
+        } catch (const std::optional<Object> object) {
+            return object;
+        }
+    }
 
-    // if (conditions.size() == actions.size() - 1)
-    //     return actions.back()->run(scope);
-    return {};
+    try {
+        if (conditions.size() == actions.size() - 1)
+            actions.back()->run(scope);
+    } catch (const std::optional<Object> object) {
+        return object;
+    }
+    
+    return std::nullopt;
 }
 
-Object For::run(const Scope&) const {
+std::optional<Object> For::run(const Scope&) const {
     LLC_CHECK(action != nullptr);
     // for (; condition(*internal_scope); updation(*internal_scope)) {
     //     auto result = action->run(scope);
@@ -176,10 +194,10 @@ Object For::run(const Scope&) const {
     //     if (result.is_return)
     //         return result;
     // }
-    return {};
+    return std::nullopt;
 }
 
-Object While::run(const Scope&) const {
+std::optional<Object> While::run(const Scope&) const {
     LLC_CHECK(action != nullptr);
 
     // while (condition(scope)) {
@@ -187,7 +205,7 @@ Object While::run(const Scope&) const {
     //     if (result.is_return)
     //         return result;
     // }
-    return {};
+    return std::nullopt;
 }
 
 }  // namespace llc
