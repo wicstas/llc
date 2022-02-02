@@ -36,11 +36,16 @@ int main() {
     compiler.compile(program);
     program.run();
 
-    auto& list = program["list"].as<vectori&>();
+    try {
+        auto& list = program["list"].as<vectori&>();
 
-    print("size of list: ", list.size());
-    for (int i = 0; i < (int)list.size(); i++)
-        print("#", i, ": ", list[i]);
+        print("size of list: ", list.size());
+        for (int i = 0; i < (int)list.size(); i++)
+            print("#", i, ": ", list[i]);
+
+    } catch (const std::exception& exception) {
+        print(exception.what());
+    }
 
     return 0;
 }
