@@ -17,7 +17,7 @@ static inline bool is_alpha(char c) {
 
 char Tokenizer::next() {
     if (current_char_offset == source_char_count)
-        fatal("Tokenizer::next(): out of bound access");
+        throw Exception("Tokenizer::next(): try to access beyond string end");
     current_char_offset++;
     column++;
     return *(text++);
@@ -115,12 +115,13 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
         case '"':
             token.type = TokenType::String;
             c = next();
-            do {
+            while (c != '"') {
                 token.value_s += c;
                 c = next();
                 if (c == '\0')
-                    fatal("missing \"");
-            } while (c != '"');
+                    throw Exception("missing \"",
+                                    Location(line, column, current_char_offset - start_offset));
+            }
             break;
         default:
             if (is_digit(c)) {

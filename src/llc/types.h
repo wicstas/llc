@@ -12,21 +12,6 @@
 
 namespace llc {
 
-struct Location {
-    Location() = default;
-    Location(int line, int column, int length) : line(line), column(column), length(length){};
-
-    friend Location operator+(Location lhs, Location rhs) {
-        lhs.length += rhs.length;
-        return lhs;
-    }
-    std::string operator()(const std::string& source);
-
-    int line = -1;
-    int column = -1;
-    int length = -1;
-};
-
 enum class TokenType : uint64_t {
     Number = 1ul << 0,
     Increment = 1ul << 1,
@@ -86,7 +71,7 @@ template <typename T>
 std::string get_type_name() {
     auto it = type_id_to_name.find(typeid(T).hash_code());
     if (it == type_id_to_name.end())
-        fatal("unknown type \"", typeid(T).name(), "\"");
+        throw_exception("unknown type \"", typeid(T).name(), "\"");
     return it->second;
 }
 
@@ -134,19 +119,17 @@ struct Object {
         if (rhs.base != nullptr)
             base.reset(rhs.base->clone());
     }
-    Object(Object&&) = default;
     Object& operator=(Object rhs) {
-        swap(rhs);
-        return *this;
-    }
-    void swap(Object& rhs) {
         std::swap(base, rhs.base);
+        return *this;
     }
 
     void assign(const Object& rhs) {
         LLC_CHECK(base != nullptr);
+        LLC_CHECK(rhs.base != nullptr);
         if (type_name() != rhs.type_name())
-            fatal("cannot assign type \"", rhs.type_name(), "\" to type \"", type_name(), "\"");
+            throw_exception("cannot assign type \"", rhs.type_name(), "\" to type \"", type_name(),
+                            "\"");
         base->assign(rhs.base.get());
     }
 
@@ -154,8 +137,16 @@ struct Object {
     T as() const {
         LLC_CHECK(base != nullptr);
         if (type_name() != get_type_name<T>())
-            fatal("cannot convert type \"", type_name(), "\" to type \"",
-                  get_type_name<std::decay_t<T>>(), "\"");
+            throw_exception("cannot convert type \"", type_name(), "\" to type \"",
+                            get_type_name<std::decay_t<T>>(), "\"");
+        return *(std::decay_t<T>*)base->ptr();
+    }
+
+    template <typename T>
+    std::optional<T> as_opt() const {
+        LLC_CHECK(base != nullptr);
+        if (type_name() != get_type_name<T>())
+            return std::nullopt;
         return *(std::decay_t<T>*)base->ptr();
     }
 
@@ -236,7 +227,8 @@ struct Object {
 };
 
 inline Object& BaseObject::operator[](std::string name) {
-    LLC_CHECK(members.find(name) != members.end());
+    if (members.find(name) == members.end())
+        throw_exception("cannot find member \"", name, "\"");
     return members[name];
 }
 
@@ -246,7 +238,7 @@ struct ConcreteObject : BaseObject {
 
     virtual BaseObject* clone() const override {
         ConcreteObject<T>* object = new ConcreteObject<T>(*this);
-        object->construct();
+        object->bind_members();
         return object;
     }
 
@@ -258,7 +250,7 @@ struct ConcreteObject : BaseObject {
         value = *(Ty*)src->ptr();
     }
 
-    void construct() {
+    void bind_members() {
         for (const auto& accessor : accessors)
             members[accessor.first] = accessor.second->access(value);
     }
@@ -270,7 +262,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorAdd<T>::value)
             value += ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"+\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"+\"");
     }
     void sub(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -279,7 +271,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorSub<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"-\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"-\"");
     }
     void mul(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -288,7 +280,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorMul<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"*\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"*\"");
     }
     void div(BaseObject* rhs) override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -297,7 +289,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorDiv<T>::value)
             value -= ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"/\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"/\"");
     }
     virtual bool less_than(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
@@ -306,7 +298,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorLT<T>::value)
             return value < ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"<\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"<\"");
         return {};
     }
     virtual bool less_equal(BaseObject* rhs) const override {
@@ -316,7 +308,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorLE<T>::value)
             return value <= ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"<=\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"<=\"");
         return {};
     }
     virtual bool greater_than(BaseObject* rhs) const override {
@@ -326,7 +318,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorGT<T>::value)
             return value > ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \">\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \">\"");
         return {};
     }
     virtual bool greater_equal(BaseObject* rhs) const override {
@@ -336,7 +328,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorGE<T>::value)
             return value >= ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \">=\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \">=\"");
         return {};
     }
     virtual bool equal(BaseObject* rhs) const override {
@@ -346,7 +338,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorEQ<T>::value)
             return value == ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"==\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"==\"");
         return {};
     }
     virtual bool not_equal(BaseObject* rhs) const override {
@@ -356,7 +348,7 @@ struct ConcreteObject : BaseObject {
         if constexpr (HasOperatorNE<T>::value)
             return value != ptr->value;
         else
-            fatal("type \"", type_name(), "\" does not have operator \"!=\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"!=\"");
         return {};
     }
 
@@ -389,41 +381,41 @@ struct InternalObject : BaseObject {
     }
 
     void* ptr() const override {
-        fatal("cannot get pointer to internal type");
+        throw_exception("cannot get pointer to internal type");
         return nullptr;
     };
     void assign(const BaseObject* src) override {
         auto ptr = dynamic_cast<const InternalObject*>(src);
         if (ptr == nullptr)
-            fatal("assign external type to internal type is not allowed");
+            throw_exception("assign external type to internal type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] = member.second;
     }
     void add(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            fatal("add external type to internal type is not allowed");
+            throw_exception("add external type to internal type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] += member.second;
     }
     void sub(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            fatal("subtract internal type by internal type is not allowed");
+            throw_exception("subtract internal type by internal type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] -= member.second;
     }
     void mul(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            fatal("multiply internal type by internal type is not allowed");
+            throw_exception("multiply internal type by internal type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] *= member.second;
     }
     void div(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            fatal("divide internal type by internal type is not allowed");
+            throw_exception("divide internal type by internal type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] /= member.second;
     }
@@ -518,7 +510,7 @@ struct ConcreteFunction : ExternalFunction {
                 f(args[0].as<decltype(types.template at<0>())>(),
                   args[1].as<decltype(types.template at<1>())>());
             else
-                fatal("too many arguments, only support <= 4");
+                throw_exception("too many arguments, only support <= 4");
 
         } else {
             if constexpr (sizeof...(Args) == 0)
@@ -529,7 +521,7 @@ struct ConcreteFunction : ExternalFunction {
                 return f(args[0].as<decltype(types.template at<0>())>(),
                          args[1].as<decltype(types.template at<1>())>());
             else
-                fatal("too many arguments, only support <= 4");
+                throw_exception("too many arguments, only support <= 4");
         }
 
         return {};
@@ -581,6 +573,8 @@ struct Scope : Statement {
     std::optional<Object> find_variable(std::string name) const;
     std::optional<Function> find_function(std::string name) const;
 
+    Object& get_variable(std::string name) const;
+
     std::shared_ptr<Scope> parent;
     std::vector<std::shared_ptr<Statement>> statements;
     mutable std::map<std::string, Object> types;
@@ -597,7 +591,7 @@ struct Operand {
     virtual Object evaluate(const Scope& scope) const = 0;
 
     virtual Object assign(const Scope&, const Object&) {
-        fatal("Operand::assign shall not be called");
+        throw_exception("Operand::assign shall not be called");
         return {};
     }
 
@@ -689,18 +683,18 @@ struct VariableOp : BaseOp {
 
     Object evaluate(const Scope& scope) const override {
         LLC_CHECK(scope.find_variable(name).has_value());
-        return scope.variables[name];
+        return scope.get_variable(name);
     }
 
     Object assign(const Scope& scope, const Object& value) override {
         LLC_CHECK(scope.find_variable(name).has_value());
-        scope.variables[name].assign(value);
-        return scope.variables[name];
+        scope.get_variable(name).assign(value);
+        return scope.get_variable(name);
     }
 
     Object& original(const Scope& scope) const {
         LLC_CHECK(scope.find_variable(name).has_value());
-        return scope.variables[name];
+        return scope.get_variable(name);
     }
 
     int get_precedence() const override {
@@ -717,11 +711,11 @@ struct ObjectMember : Operand {
     ObjectMember(std::string name) : name(name){};
 
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
-        fatal("ObjectMember::collapse() shall not be called");
+        throw_exception("ObjectMember::collapse() shall not be called");
         return {};
     }
     Object evaluate(const Scope&) const override {
-        fatal("ObjectMember::evaluate() shall not be called");
+        throw_exception("ObjectMember::evaluate() shall not be called");
         return {};
     }
     int get_precedence() const override {
@@ -1005,11 +999,11 @@ struct NotEqual : BinaryOp {
 
 struct LeftParenthese : Operand {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
-        fatal("LeftParenthese::collapse() shall not be called");
+        throw_exception("LeftParenthese::collapse() shall not be called");
         return {};
     }
     Object evaluate(const Scope&) const override {
-        fatal("LeftParenthese::evaluate() shall not be called");
+        throw_exception("LeftParenthese::evaluate() shall not be called");
         return {};
     }
     int get_precedence() const override {
@@ -1021,11 +1015,11 @@ struct LeftParenthese : Operand {
 
 struct RightParenthese : Operand {
     std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
-        fatal("RightParenthese::collapse() shall not be called");
+        throw_exception("RightParenthese::collapse() shall not be called");
         return {};
     }
     Object evaluate(const Scope&) const override {
-        fatal("RightParenthese::evaluate() shall not be called");
+        throw_exception("RightParenthese::evaluate() shall not be called");
         return {};
     }
     int get_precedence() const override {
@@ -1066,9 +1060,9 @@ struct FunctionCallOp : BaseOp {
     FunctionCallOp(FunctionCall function) : function(function){};
 
     Object evaluate(const Scope& scope) const override {
-        if (auto ret = function.run(scope))
-            return *ret;
-        fatal("function returns void, which cannnot appear in expression");
+        if (auto result = function.run(scope))
+            return *result;
+        throw_exception("function returns void, which cannnot appear in expression");
         return {};
     }
 
@@ -1143,7 +1137,7 @@ struct Program {
             object = std::make_unique<ConcreteObject<T>>(T());
         };
         ~TypeBindHelper() {
-            object->construct();
+            object->bind_members();
             types[type_name] = Object(std::move(object));
         }
 
@@ -1165,12 +1159,18 @@ struct Program {
     }
 
     void run() {
-        scope->run(*scope);
+        try {
+            scope->run(*scope);
+        } catch (const Exception& throw_exception) {
+            print(throw_exception(source));
+        }
     }
 
     Object& operator[](std::string name) const {
         return scope->variables[name];
     }
+
+    std::string source;
 
   private:
     std::shared_ptr<Scope> scope;

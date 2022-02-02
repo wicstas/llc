@@ -10,7 +10,7 @@ std::map<size_t, std::string> type_id_to_name = {
     {typeid(bool).hash_code(), "bool"},
 };
 
-std::string Location::operator()(const std::string& source) {
+std::string Location::operator()(const std::string& source) const {
     LLC_CHECK(line >= 0);
     LLC_CHECK(column >= 0);
     LLC_CHECK(length > 0);
@@ -83,6 +83,15 @@ std::optional<Function> Scope::find_function(std::string name) const {
     else
         return it->second;
 }
+Object& Scope::get_variable(std::string name) const {
+    auto it = variables.find(name);
+    if (it == variables.end()) {
+        if (!parent)
+            throw_exception("cannot get varaible \"", name, "\"");
+        return parent->get_variable(name);
+    } else
+        return it->second;
+}
 
 std::optional<Object> InternalFunction::run(const Scope& scope,
                                             const std::vector<Expression>& exprs) const {
@@ -93,12 +102,17 @@ std::optional<Object> InternalFunction::run(const Scope& scope,
         LLC_CHECK(definition->variables.find(parameters[i]) != definition->variables.end());
 
     for (int i = 0; i < (int)exprs.size(); i++)
-        if (auto ret = exprs[i](scope))
-            definition->variables[parameters[i]] = *ret;
+        if (auto result = exprs[i](scope))
+            definition->variables[parameters[i]] = *result;
         else
-            fatal("void cannot be used as function parameter");
+            throw_exception("void cannot be used as function parameter");
 
-    return definition->run(scope);
+    std::optional<Object> result = definition->run(scope);
+    if (result.has_value() != return_type.has_value())
+        throw_exception("function does not return the type specified at its declaration");
+    else if (result.has_value() && (result->type_name() != return_type->type_name()))
+        throw_exception("function does not return the type specified at its declaration");
+    return result;
 }
 
 std::optional<Object> ExternalFunction::run(const Scope& scope,
@@ -106,10 +120,10 @@ std::optional<Object> ExternalFunction::run(const Scope& scope,
     std::vector<Object> arguments;
 
     for (auto& expr : exprs) {
-        if (auto ret = expr(scope))
-            arguments.push_back(*ret);
+        if (auto result = expr(scope))
+            arguments.push_back(*result);
         else
-            fatal("void cannot be passes as argument to function");
+            throw_exception("void cannot be passes as argument to function");
     }
     return invoke(arguments);
 }
@@ -169,26 +183,29 @@ std::optional<Object> IfElseChain::run(const Scope& scope) const {
 
     for (int i = 0; i < (int)conditions.size(); i++) {
         try {
-            if (conditions[i](scope))
+            if (conditions[i](scope)->as<bool>()) {
                 actions[i]->run(scope);
+                throw std::optional<Object>(std::nullopt);
+            }
         } catch (const std::optional<Object> object) {
             return object;
         }
     }
 
-    try {
-        if (conditions.size() == actions.size() - 1)
+    if (conditions.size() == actions.size() - 1) {
+        try {
             actions.back()->run(scope);
-    } catch (const std::optional<Object> object) {
-        return object;
+        } catch (const std::optional<Object> object) {
+            return object;
+        }
     }
-    
+
     return std::nullopt;
 }
 
 std::optional<Object> For::run(const Scope&) const {
     LLC_CHECK(action != nullptr);
-    // for (; condition(*internal_scope); updation(*internal_scope)) {
+    // for (; condition(*internal_scope)->as<bool>(); updation(*internal_scope)->as<bool>()) {
     //     auto result = action->run(scope);
 
     //     if (result.is_return)
@@ -200,7 +217,7 @@ std::optional<Object> For::run(const Scope&) const {
 std::optional<Object> While::run(const Scope&) const {
     LLC_CHECK(action != nullptr);
 
-    // while (condition(scope)) {
+    // while (condition(scope)->as<bool>()) {
     //     auto result = action->run(scope);
     //     if (result.is_return)
     //         return result;

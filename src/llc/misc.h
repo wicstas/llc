@@ -15,19 +15,67 @@ void print(const Args&... args) {
     std::cout << '\n';
 }
 
-template <typename... Args>
-void fatal(const Args&... args) {
-    print(args...);
-    abort();
+template <typename T, typename... Args>
+std::string to_string(const T& first, const Args&... args) {
+    static_assert(std::is_convertible<T, std::string>::value || std::is_arithmetic<T>::value,
+                  "unable to convert type T to std::string");
+
+    std::string str;
+    if constexpr (std::is_convertible<T, std::string>::value)
+        str += std::string(first);
+    else if constexpr (std::is_arithmetic<T>::value)
+        str += std::to_string(first);
+
+    if constexpr (sizeof...(args) != 0)
+        str += to_string(args...);
+    return str;
 }
 
-#define LLC_CHECK(x)                                                                          \
-    do {                                                                                      \
-        if (!(x)) {                                                                           \
-            fatal("check \"", #x, "\" failed[file \"", __FILE__, "\", line ", __LINE__, ", ", \
-                  __func__, "()]");                                                           \
-            abort();                                                                          \
-        }                                                                                     \
+struct Location {
+    Location() = default;
+    Location(int line, int column, int length) : line(line), column(column), length(length){};
+
+    std::string operator()(const std::string& source) const;
+
+    friend Location operator+(Location lhs, Location rhs) {
+        lhs.length += rhs.length;
+        return lhs;
+    }
+
+    int line = -1;
+    int column = -1;
+    int length = -1;
+};
+
+struct Exception : std::exception {
+    Exception(std::string message, Location location = {}) : message(message), location(location){};
+
+    const char* what() const noexcept override {
+        return message.c_str();
+    }
+
+    std::string operator()(std::string source) const {
+        if (location.line != -1)
+            return message + ":\n" + location(source);
+        else
+            return message;
+    }
+
+    std::string message;
+    Location location;
+};
+
+template <typename... Args>
+void throw_exception(const Args&... args) {
+    throw Exception(to_string(args...));
+}
+
+#define LLC_CHECK(x)                                                                            \
+    do {                                                                                        \
+        if (!(x)) {                                                                             \
+            throw Exception(to_string("internal error: check \"", #x, "\" failed[file \"",      \
+                                      __FILE__, "\", line ", __LINE__, ", ", __func__, "()]")); \
+        }                                                                                       \
     } while (false)
 
 std::vector<std::string> separate_lines(const std::string& source);

@@ -17,7 +17,9 @@ void print_bear(Bear bear) {
 }
 
 int main() {
-    std::string source = R"(
+    Program program;
+
+    program.source = R"(
         Bear bear;
         bear.name = "a bear";
         bear.weight = 200.0f;
@@ -33,32 +35,34 @@ int main() {
         };
 
         void print_bird(Bird bird){
-            printss("Bird: ",bird.name);
-            printsf("  weight: ",bird.weight);
-            printsf("  speed : ",bird.speed);
+            printss("Bird: ", bird.name);
+            printsf("  weight: ", bird.weight);
+            printsf("  speed : ", bird.speed);
         }
 
         Bird create_bird(float weight,float speed){
             Bird bird;
-            // if(weight < 1.0f)
-                bird.name = "a bird";
-            // else if(weight < 4.0f)
-            //     bird.name = "A Bird";
-            // else
-            //     bird.name = "THE BIRD";
+
+            if(weight < 1.0f)
+                bird.name = "a small bird";
+            else if(weight < 4.0f)
+                bird.name = "a middle-sized bird";
+            else
+                bird.name = "a big bird";
 
             bird.weight = weight;
             bird.speed = speed;
             return bird;
         }
 
-
+        Bird bird;
+        bird.weight = 1.2f;
+        bird.speed = 2.2f;
         print_bird(create_bird(0.4f,10.0f));
-        print_bird(create_bird(6.0f,10.0f));
+        print_bird(create_bird(3.0f,10.0f));
         print_bird(create_bird(27.0f,10.0f));
     )";
 
-    Program program;
 
     program.bind<std::string>("string");
 
@@ -68,12 +72,14 @@ int main() {
         .bind("attack", &Bear::attack)
         .bind("defence", &Bear::defence);
 
+    program.bind("printb", print<bool>);
+    program.bind("prints", print<std::string>);
     program.bind("printss", print<std::string, std::string>);
     program.bind("printsf", print<std::string, float>);
     program.bind("print_bear", print_bear);
 
     Compiler compiler;
-    compiler.compile(program, source);
+    compiler.compile(program);
     program.run();
 
     return 0;

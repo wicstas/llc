@@ -53,7 +53,7 @@ struct Parser {
     template <typename T>
     T must_has(T value, Token token) {
         if (!value)
-            fatal("cannot find \"", token.id, "\":\n", token.location(source));
+            throw_exception("cannot find \"", token.id, "\":\n", token.location(source));
         return value;
     }
 
