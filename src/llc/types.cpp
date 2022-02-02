@@ -5,8 +5,10 @@
 namespace llc {
 
 std::map<size_t, std::string> type_id_to_name = {
-    {typeid(int).hash_code(), "int"},       {typeid(float).hash_code(), "float"},
-    {typeid(double).hash_code(), "double"}, {typeid(std::string).hash_code(), "string"},
+    {typeid(int).hash_code(), "int"},           {typeid(uint8_t).hash_code(), "uint8_t"},
+    {typeid(uint16_t).hash_code(), "uint16_t"}, {typeid(uint32_t).hash_code(), "uin32_t"},
+    {typeid(uint64_t).hash_code(), "uin64_t"},  {typeid(float).hash_code(), "float"},
+    {typeid(double).hash_code(), "double"},     {typeid(std::string).hash_code(), "string"},
     {typeid(bool).hash_code(), "bool"},
 };
 
@@ -126,6 +128,21 @@ std::optional<Object> ExternalFunction::run(const Scope& scope,
             throw_exception("void cannot be passes as argument to function");
     }
     return invoke(arguments);
+}
+
+Object MemberFunctionCall::evaluate(const Scope& scope) const {
+    auto variable = dynamic_cast<VariableOp*>(operand.get());
+    LLC_CHECK(variable != nullptr);
+    if (variable->original(scope).base->functions.find(function_name) ==
+        variable->original(scope).base->functions.end())
+        throw_exception("cannot find function \"", function_name, "\"");
+
+    if (auto result =
+            variable->original(scope).base->functions[function_name].run(scope, arguments)) {
+        return *result;
+    } else {
+        return {};
+    }
 }
 
 void Expression::apply_parenthese() {

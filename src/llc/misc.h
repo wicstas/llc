@@ -101,6 +101,15 @@ DefineCheckOperator(GE, >=);
 DefineCheckOperator(EQ, ==);
 DefineCheckOperator(NE, !=);
 
+template <typename T>
+struct HasOperatorArrayAccess {
+    template <typename U>
+    static constexpr std::true_type check(std::decay_t<decltype(std::declval<U>()[0])>*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+    static constexpr bool value = decltype(check<T>(0))::value;
+};
+
 template <typename... Ts>
 struct TypePack;
 

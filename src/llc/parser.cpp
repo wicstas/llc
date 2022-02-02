@@ -238,9 +238,26 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<NumberLiteral>(token.value));
         else if (token.type == TokenType::String)
             expression.operands.push_back(std::make_shared<StringLiteral>(token.value_s));
-        else if (token.type == TokenType::Dot)
-            expression.operands.push_back(std::make_shared<MemberAccess>());
-        else if (token.type == TokenType::Assign)
+        else if (token.type == TokenType::Dot) {
+            auto function_name = advance();
+            auto next1 = advance();
+            if (next1.type == TokenType::LeftParenthese) {
+                std::shared_ptr<MemberFunctionCall> call = std::make_shared<MemberFunctionCall>();
+                call->function_name = function_name.id;
+
+                while (!match(TokenType::RightParenthese)) {
+                    call->arguments.emplace_back(build_expression(scope));
+                    if (must_match(TokenType::Comma | TokenType::RightParenthese).type ==
+                        TokenType::RightParenthese)
+                        break;
+                }
+                expression.operands.push_back(call);
+            } else {
+                putback();
+                putback();
+                expression.operands.push_back(std::make_shared<MemberAccess>());
+            }
+        } else if (token.type == TokenType::Assign)
             expression.operands.push_back(std::make_shared<Assignment>());
         // else if (token.type == TokenType::Increment && prev.type == TokenType::Identifier)
         //     expression.operands.push_back(std::make_shared<PostIncrement>());
@@ -258,11 +275,11 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<Multiplication>());
         else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
-        // else if (token.type == TokenType::LeftSquareBracket)
-        //     expression.operands.push_back(std::make_shared<ArrayAccess>());
-        // else if (token.type == TokenType::RightSquareBracket) {
-        //     // do nothing
-        //  }
+        else if (token.type == TokenType::LeftSquareBracket)
+            expression.operands.push_back(std::make_shared<ArrayAccess>());
+        else if (token.type == TokenType::RightSquareBracket) {
+            // do nothing
+         }
         else if (token.type == TokenType::LessThan)
             expression.operands.push_back(std::make_shared<LessThan>());
         else if (token.type == TokenType::LessEqual)

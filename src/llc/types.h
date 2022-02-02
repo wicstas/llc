@@ -76,6 +76,14 @@ std::string get_type_name() {
 }
 
 struct Object;
+struct Function;
+
+struct BaseFunction {
+    virtual ~BaseFunction() = default;
+    virtual BaseFunction* clone() const = 0;
+    virtual std::optional<Object> run(const Scope& scope,
+                                      const std::vector<Expression>& exprs) const = 0;
+};
 
 struct BaseObject {
     BaseObject(std::string type_name) : type_name_(type_name){};
@@ -93,13 +101,15 @@ struct BaseObject {
     virtual bool greater_equal(BaseObject* rhs) const = 0;
     virtual bool equal(BaseObject* rhs) const = 0;
     virtual bool not_equal(BaseObject* rhs) const = 0;
+    virtual Object array_access(size_t index) = 0;
 
     std::string type_name() const {
         return type_name_;
     }
-    Object& operator[](std::string name);
+    Object& get_member(std::string name);
 
     mutable std::map<std::string, Object> members;
+    mutable std::map<std::string, Function> functions;
 
   private:
     std::string type_name_;
@@ -136,9 +146,15 @@ struct Object {
     template <typename T>
     T as() const {
         LLC_CHECK(base != nullptr);
+        if (type_name() == "float") {
+            if constexpr (std::is_arithmetic<T>::value)
+                return T(*(float*)base->ptr());
+        }
+
         if (type_name() != get_type_name<T>())
             throw_exception("cannot convert type \"", type_name(), "\" to type \"",
                             get_type_name<std::decay_t<T>>(), "\"");
+
         return *(std::decay_t<T>*)base->ptr();
     }
 
@@ -220,13 +236,17 @@ struct Object {
 
     Object& operator[](std::string name) {
         LLC_CHECK(base != nullptr);
-        return (*base)[name];
+        return base->get_member(name);
+    }
+    Object operator[](size_t index) {
+        LLC_CHECK(base != nullptr);
+        return base->array_access(index);
     }
 
     std::unique_ptr<BaseObject> base;
 };
 
-inline Object& BaseObject::operator[](std::string name) {
+inline Object& BaseObject::get_member(std::string name) {
     if (members.find(name) == members.end())
         throw_exception("cannot find member \"", name, "\"");
     return members[name];
@@ -236,11 +256,7 @@ template <typename T>
 struct ConcreteObject : BaseObject {
     ConcreteObject(T value) : BaseObject(get_type_name<T>()), value(value){};
 
-    virtual BaseObject* clone() const override {
-        ConcreteObject<T>* object = new ConcreteObject<T>(*this);
-        object->bind_members();
-        return object;
-    }
+    virtual BaseObject* clone() const override;
 
     void* ptr() const override {
         return (void*)&value;
@@ -291,7 +307,7 @@ struct ConcreteObject : BaseObject {
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"/\"");
     }
-    virtual bool less_than(BaseObject* rhs) const override {
+    bool less_than(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
@@ -301,7 +317,7 @@ struct ConcreteObject : BaseObject {
             throw_exception("type \"", type_name(), "\" does not have operator \"<\"");
         return {};
     }
-    virtual bool less_equal(BaseObject* rhs) const override {
+    bool less_equal(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
@@ -311,7 +327,7 @@ struct ConcreteObject : BaseObject {
             throw_exception("type \"", type_name(), "\" does not have operator \"<=\"");
         return {};
     }
-    virtual bool greater_than(BaseObject* rhs) const override {
+    bool greater_than(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
@@ -321,7 +337,7 @@ struct ConcreteObject : BaseObject {
             throw_exception("type \"", type_name(), "\" does not have operator \">\"");
         return {};
     }
-    virtual bool greater_equal(BaseObject* rhs) const override {
+    bool greater_equal(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
@@ -331,7 +347,7 @@ struct ConcreteObject : BaseObject {
             throw_exception("type \"", type_name(), "\" does not have operator \">=\"");
         return {};
     }
-    virtual bool equal(BaseObject* rhs) const override {
+    bool equal(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
@@ -341,7 +357,7 @@ struct ConcreteObject : BaseObject {
             throw_exception("type \"", type_name(), "\" does not have operator \"==\"");
         return {};
     }
-    virtual bool not_equal(BaseObject* rhs) const override {
+    bool not_equal(BaseObject* rhs) const override {
         auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
         LLC_CHECK(ptr != nullptr);
 
@@ -350,6 +366,15 @@ struct ConcreteObject : BaseObject {
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"!=\"");
         return {};
+    }
+    Object array_access(size_t index) override {
+        static Object null_object;
+        if constexpr (HasOperatorArrayAccess<T>::value)
+            return (Object)std::make_unique<ConcreteObject<std::decay_t<decltype(value[index])>>>(
+                value[index]);
+        else
+            throw_exception("type \"", type_name(), "\" does not have operator \"[]\"");
+        return null_object;
     }
 
     struct Accessor {
@@ -455,18 +480,16 @@ struct InternalObject : BaseObject {
                 return true;
         return false;
     }
+    Object array_access(size_t) override {
+        static Object null_object;
+        throw_exception("internal type does not support operator []");
+        return null_object;
+    }
 };
 
 template <typename T, typename>
 Object::Object(T instance) : base(std::make_unique<ConcreteObject<T>>(instance)) {
 }
-
-struct BaseFunction {
-    virtual ~BaseFunction() = default;
-    virtual BaseFunction* clone() const = 0;
-    virtual std::optional<Object> run(const Scope& scope,
-                                      const std::vector<Expression>& exprs) const = 0;
-};
 
 struct InternalFunction : BaseFunction {
     BaseFunction* clone() const override {
@@ -483,6 +506,8 @@ struct InternalFunction : BaseFunction {
 struct ExternalFunction : BaseFunction {
     std::optional<Object> run(const Scope& scope,
                               const std::vector<Expression>& exprs) const override;
+    virtual void bind_object(BaseObject*) {
+    }
 
   protected:
     virtual Object invoke(const std::vector<Object>& args) const = 0;
@@ -490,7 +515,7 @@ struct ExternalFunction : BaseFunction {
 
 template <typename Return, typename... Args>
 struct ConcreteFunction : ExternalFunction {
-    using F = Return (*)(Args...);
+    using F = Return (*)(Args&&...);
     ConcreteFunction(F f) : f(f){};
 
     BaseFunction* clone() const override {
@@ -530,6 +555,64 @@ struct ConcreteFunction : ExternalFunction {
     F f;
 };
 
+template <typename T, typename R, typename... Args>
+struct ConcreteMemberFunction : ExternalFunction {
+    using F = R (T::*)(Args...);
+    ConcreteMemberFunction(ConcreteObject<T>* object, F f) : object(object), f(f){};
+
+    BaseFunction* clone() const override {
+        return new ConcreteMemberFunction<T, R, Args...>(*this);
+    }
+    void bind_object(BaseObject* ptr) override {
+        object = dynamic_cast<ConcreteObject<T>*>(ptr);
+        LLC_CHECK(object != nullptr);
+    }
+    Object invoke(const std::vector<Object>& args) const override {
+        LLC_CHECK(args.size() == sizeof...(Args));
+        TypePack<Args...> types;
+
+        LLC_CHECK(object != nullptr);
+
+        if constexpr (std::is_same<R, void>::value) {
+            if constexpr (sizeof...(Args) == 0)
+                (object->value.*f)();
+            else if constexpr (sizeof...(Args) == 1)
+                (object->value.*f)(args[0].as<decltype(types.template at<0>())>());
+            else if constexpr (sizeof...(Args) == 2)
+                (object->value.*f)(args[0].as<decltype(types.template at<0>())>(),
+                                   args[1].as<decltype(types.template at<1>())>());
+            else
+                throw_exception("too many arguments, only support <= 4");
+
+        } else {
+            if constexpr (sizeof...(Args) == 0)
+                return (Object)(object->value.*f)();
+            else if constexpr (sizeof...(Args) == 1)
+                return (Object)(object->value.*f)(args[0].as<decltype(types.template at<0>())>());
+            else if constexpr (sizeof...(Args) == 2)
+                return (Object)(object->value.*f)(args[0].as<decltype(types.template at<0>())>(),
+                                                  args[1].as<decltype(types.template at<1>())>());
+            else
+                throw_exception("too many arguments, only support <= 4");
+        }
+
+        return {};
+    }
+
+    ConcreteObject<T>* object;
+    F f;
+};
+
+template <typename T>
+BaseObject* ConcreteObject<T>::clone() const {
+    ConcreteObject<T>* object = new ConcreteObject<T>(*this);
+    object->bind_members();
+    for (auto& f : object->functions) {
+        dynamic_cast<ExternalFunction*>(f.second.base.get())->bind_object(object);
+    }
+    return object;
+}
+
 struct Function {
     Function() : base(nullptr){};
     Function(std::unique_ptr<BaseFunction> base) : base(std::move(base)) {
@@ -554,7 +637,7 @@ struct Function {
         return base->run(scope, exprs);
     }
 
-  private:
+    //   private:
     std::unique_ptr<BaseFunction> base;
 };
 
@@ -762,23 +845,46 @@ struct MemberAccess : BinaryOp {
     int precedence = 8;
 };
 
-// struct ArrayAccess : BinaryOp {
-//     Object evaluate(Scope&) override {
-//         // Object arr = a->evaluate(scope);
-//         // int index = (int)b->evaluate(scope).value;
-//         return {};
-//     }
-//     Object assign(Scope&, const Object&) override {
-//         // Object arr = a->evaluate(scope);
-//         // int index = (int)b->evaluate(scope).value;
-//         return {};
-//     }
+struct MemberFunctionCall : PostUnaryOp {
+    Object evaluate(const Scope& scope) const override;
+    Object assign(const Scope&, const Object&) override {
+        throw_exception("cannot assign a member function");
+        return {};
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 8;
 
-//     int precedence = 2;
-// };
+    std::string function_name;
+    std::vector<Expression> arguments;
+};
+
+struct ArrayAccess : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        Object arr = a->evaluate(scope);
+        size_t index = (int)b->evaluate(scope).as<size_t>();
+        return arr[index];
+    }
+    Object assign(const Scope& scope, const Object& object) override {
+        Object& arr = ((VariableOp*)a.get())->original(scope);
+        size_t index = (int)b->evaluate(scope).as<size_t>();
+        return arr[index] = object;
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+
+    int precedence = 2;
+};
 
 struct TypeOp : BaseOp {
     TypeOp(Object type) : type(type){};
@@ -1141,10 +1247,43 @@ struct Program {
             types[type_name] = Object(std::move(object));
         }
 
-        template <typename M>
+        template <typename M, typename = typename std::enable_if_t<std::is_member_pointer_v<M>>>
         TypeBindHelper& bind(std::string id, M T::*ptr) {
             using U = typename ConcreteObject<T>::template ConcreteAccessor<M>;
             object->accessors[id] = std::make_shared<U>(ptr);
+            return *this;
+        }
+        template <typename F>
+        TypeBindHelper& bind(std::string id, F&& func) {
+            return bind_func_impl(id, func);
+        }
+
+        template <typename R = void, typename... Args>
+        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...)) {
+            object->functions[id] =
+                (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
+                    object.get(), (R(T::*)(Args...))func);
+            return *this;
+        }
+        template <typename R = void, typename... Args>
+        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...) const) {
+            object->functions[id] =
+                (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
+                    object.get(), (R(T::*)(Args...))func);
+            return *this;
+        }
+        template <typename R = void, typename... Args>
+        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...) &) {
+            object->functions[id] =
+                (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
+                    object.get(), (R(T::*)(Args...))func);
+            return *this;
+        }
+        template <typename R = void, typename... Args>
+        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...) const&) {
+            object->functions[id] =
+                (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
+                    object.get(), (R(T::*)(Args...))func);
             return *this;
         }
 
