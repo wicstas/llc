@@ -6,28 +6,41 @@ int main() {
     Program program;
 
     program.source = R"(
-        vectori record;
+        vectori create_vector(int size){
+            vectori list;
+            for(int i = 0; i < size; i++){
+                if(list.size() < 2)
+                    list.push_back(1);
+                else
+                    list.push_back(list[i - 2] + list[i - 1]);
+            }
+            return list;
+        }
 
-        record.push_back(17);
-        record.push_back(32);
-        record.push_back(60);
+        vectori list = create_vector(10);
 
-        printi(record[0]);
-        printi(record[1]);
-        printi(record[2]);
+        for(int i = 0; i < list.size(); i++)
+            printi(list[i]);
     )";
 
     program.bind("printi", print<int>);
-    program.bind("prints", print<std::string>);
 
-    program.bind<std::vector<int>>("vectori")
-        .bind("size", &std::vector<int>::size)
-        .bind("resize", (void(std::vector<int>::*)(size_t)) & std::vector<int>::resize)
-        .bind("push_back", (void(std::vector<int>::*)(const int&)) & std::vector<int>::push_back);
+    using vectori = std::vector<int>;
+
+    program.bind<vectori>("vectori")
+        .bind("size", &vectori::size)
+        .bind("resize", overload_cast<size_t>(&vectori::resize))
+        .bind("push_back", overload_cast<const int&>(&vectori::push_back));
 
     Compiler compiler;
     compiler.compile(program);
     program.run();
+
+    auto& list = program["list"].as<vectori&>();
+
+    print("size of list: ", list.size());
+    for (int i = 0; i < (int)list.size(); i++)
+        print("#", i, ": ", list[i]);
 
     return 0;
 }

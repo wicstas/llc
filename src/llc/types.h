@@ -71,7 +71,8 @@ template <typename T>
 std::string get_type_name() {
     auto it = type_id_to_name.find(typeid(T).hash_code());
     if (it == type_id_to_name.end())
-        throw_exception("unknown type \"", typeid(T).name(), "\"");
+        throw_exception("cannot get name of unregistered type T, typeid(T).name(): \"",
+                        typeid(T).name(), "\"");
     return it->second;
 }
 
@@ -90,18 +91,73 @@ struct BaseObject {
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
     virtual void* ptr() const = 0;
-    virtual void assign(const BaseObject* src) = 0;
+    virtual void assign(const BaseObject* rhs) = 0;
     virtual void add(BaseObject* rhs) = 0;
     virtual void sub(BaseObject* rhs) = 0;
     virtual void mul(BaseObject* rhs) = 0;
     virtual void div(BaseObject* rhs) = 0;
+    virtual void increment() = 0;
+    virtual void decrement() = 0;
     virtual bool less_than(BaseObject* rhs) const = 0;
     virtual bool less_equal(BaseObject* rhs) const = 0;
     virtual bool greater_than(BaseObject* rhs) const = 0;
     virtual bool greater_equal(BaseObject* rhs) const = 0;
     virtual bool equal(BaseObject* rhs) const = 0;
     virtual bool not_equal(BaseObject* rhs) const = 0;
-    virtual Object array_access(size_t index) = 0;
+
+    virtual Object get_element(size_t index) const = 0;
+    virtual void set_element(size_t index, Object object) = 0;
+
+    template <typename T>
+    T as() const {
+        if constexpr (std::is_arithmetic<T>::value) {
+            if (type_name() == "int")
+                return T(*(int*)ptr());
+            else if (type_name() == "bool")
+                return T(*(bool*)ptr());
+            else if (type_name() == "uint8_t")
+                return T(*(uint8_t*)ptr());
+            else if (type_name() == "uint16_t")
+                return T(*(uint16_t*)ptr());
+            else if (type_name() == "uint32_t")
+                return T(*(uint32_t*)ptr());
+            else if (type_name() == "uint64_t")
+                return T(*(uint64_t*)ptr());
+            else if (type_name() == "float")
+                return T(*(float*)ptr());
+        }
+
+        if (type_name() != get_type_name<T>())
+            throw_exception("cannot convert type \"", type_name(), "\" to type \"",
+                            get_type_name<std::decay_t<T>>(), "\"");
+
+        return *(std::decay_t<T>*)ptr();
+    }
+
+    template <typename T>
+    std::optional<T> as_opt() const {
+        if constexpr (std::is_arithmetic<T>::value) {
+            if (type_name() == "int")
+                return T(*(int*)ptr());
+            else if (type_name() == "bool")
+                return T(*(bool*)ptr());
+            else if (type_name() == "uint8_t")
+                return T(*(uint8_t*)ptr());
+            else if (type_name() == "uint16_t")
+                return T(*(uint16_t*)ptr());
+            else if (type_name() == "uint32_t")
+                return T(*(uint32_t*)ptr());
+            else if (type_name() == "uint64_t")
+                return T(*(uint64_t*)ptr());
+            else if (type_name() == "float")
+                return T(*(float*)ptr());
+        }
+
+        if (type_name() != get_type_name<T>())
+            return std::nullopt;
+
+        return *(std::decay_t<T>*)ptr();
+    }
 
     std::string type_name() const {
         return type_name_;
@@ -129,6 +185,7 @@ struct Object {
         if (rhs.base != nullptr)
             base.reset(rhs.base->clone());
     }
+
     Object& operator=(Object rhs) {
         std::swap(base, rhs.base);
         return *this;
@@ -137,33 +194,19 @@ struct Object {
     void assign(const Object& rhs) {
         LLC_CHECK(base != nullptr);
         LLC_CHECK(rhs.base != nullptr);
-        if (type_name() != rhs.type_name())
-            throw_exception("cannot assign type \"", rhs.type_name(), "\" to type \"", type_name(),
-                            "\"");
         base->assign(rhs.base.get());
     }
 
     template <typename T>
     T as() const {
         LLC_CHECK(base != nullptr);
-        if (type_name() == "float") {
-            if constexpr (std::is_arithmetic<T>::value)
-                return T(*(float*)base->ptr());
-        }
-
-        if (type_name() != get_type_name<T>())
-            throw_exception("cannot convert type \"", type_name(), "\" to type \"",
-                            get_type_name<std::decay_t<T>>(), "\"");
-
-        return *(std::decay_t<T>*)base->ptr();
+        return base->as<T>();
     }
 
     template <typename T>
     std::optional<T> as_opt() const {
         LLC_CHECK(base != nullptr);
-        if (type_name() != get_type_name<T>())
-            return std::nullopt;
-        return *(std::decay_t<T>*)base->ptr();
+        return base->as_opt<T>();
     }
 
     std::string type_name() const {
@@ -190,6 +233,28 @@ struct Object {
         LLC_CHECK(rhs.base != nullptr);
         base->div(rhs.base.get());
         return *this;
+    }
+    Object& operator++() {
+        LLC_CHECK(base != nullptr);
+        base->increment();
+        return *this;
+    }
+    Object operator++(int) {
+        LLC_CHECK(base != nullptr);
+        Object temp = *this;
+        base->increment();
+        return temp;
+    }
+    Object& operator--() {
+        LLC_CHECK(base != nullptr);
+        base->decrement();
+        return *this;
+    }
+    Object operator--(int) {
+        LLC_CHECK(base != nullptr);
+        Object temp = *this;
+        base->decrement();
+        return temp;
     }
     friend Object operator+(Object lhs, const Object& rhs) {
         return lhs += rhs;
@@ -238,19 +303,29 @@ struct Object {
         LLC_CHECK(base != nullptr);
         return base->get_member(name);
     }
-    Object operator[](size_t index) {
+
+    struct ArrayElementProxy {
+        ArrayElementProxy(BaseObject* base, size_t index) : base(base), index(index) {
+        }
+
+        operator Object() const {
+            return base->get_element(index);
+        }
+        ArrayElementProxy& operator=(Object object) {
+            base->set_element(index, object);
+            return *this;
+        }
+
+        BaseObject* base;
+        size_t index;
+    };
+    ArrayElementProxy operator[](size_t index) {
         LLC_CHECK(base != nullptr);
-        return base->array_access(index);
+        return ArrayElementProxy(base.get(), index);
     }
 
     std::unique_ptr<BaseObject> base;
 };
-
-inline Object& BaseObject::get_member(std::string name) {
-    if (members.find(name) == members.end())
-        throw_exception("cannot find member \"", name, "\"");
-    return members[name];
-}
 
 template <typename T>
 struct ConcreteObject : BaseObject {
@@ -261,9 +336,8 @@ struct ConcreteObject : BaseObject {
     void* ptr() const override {
         return (void*)&value;
     }
-    void assign(const BaseObject* src) override {
-        using Ty = typename std::decay_t<T>;
-        value = *(Ty*)src->ptr();
+    void assign(const BaseObject* rhs) override {
+        value = rhs->as<typename std::decay_t<T>>();
     }
 
     void bind_members() {
@@ -272,109 +346,96 @@ struct ConcreteObject : BaseObject {
     }
 
     void add(BaseObject* rhs) override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorAdd<T>::value)
-            value += ptr->value;
+            value += rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"+\"");
     }
     void sub(BaseObject* rhs) override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorSub<T>::value)
-            value -= ptr->value;
+            value -= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"-\"");
     }
     void mul(BaseObject* rhs) override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorMul<T>::value)
-            value -= ptr->value;
+            value -= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"*\"");
     }
     void div(BaseObject* rhs) override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorDiv<T>::value)
-            value -= ptr->value;
+            value -= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"/\"");
     }
+    void increment() override {
+        if constexpr (HasOperatorPreIncrement<T>::value)
+            ++value;
+        else
+            throw_exception("type \"", type_name(), "\" does not have operator \"++\"");
+    }
+    void decrement() override {
+        if constexpr (HasOperatorPreIncrement<T>::value)
+            --value;
+        else
+            throw_exception("type \"", type_name(), "\" does not have operator \"--\"");
+    }
     bool less_than(BaseObject* rhs) const override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorLT<T>::value)
-            return value < ptr->value;
+            return value < rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"<\"");
         return {};
     }
     bool less_equal(BaseObject* rhs) const override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorLE<T>::value)
-            return value <= ptr->value;
+            return value <= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"<=\"");
         return {};
     }
     bool greater_than(BaseObject* rhs) const override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorGT<T>::value)
-            return value > ptr->value;
+            return value > rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \">\"");
         return {};
     }
     bool greater_equal(BaseObject* rhs) const override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorGE<T>::value)
-            return value >= ptr->value;
+            return value >= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \">=\"");
         return {};
     }
     bool equal(BaseObject* rhs) const override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorEQ<T>::value)
-            return value == ptr->value;
+            return value == rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"==\"");
         return {};
     }
     bool not_equal(BaseObject* rhs) const override {
-        auto ptr = dynamic_cast<ConcreteObject<T>*>(rhs);
-        LLC_CHECK(ptr != nullptr);
-
         if constexpr (HasOperatorNE<T>::value)
-            return value != ptr->value;
+            return value != rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"!=\"");
         return {};
     }
-    Object array_access(size_t index) override {
-        static Object null_object;
+    Object get_element(size_t index) const override {
         if constexpr (HasOperatorArrayAccess<T>::value)
             return (Object)std::make_unique<ConcreteObject<std::decay_t<decltype(value[index])>>>(
                 value[index]);
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"[]\"");
-        return null_object;
+        return {};
+    }
+    void set_element(size_t index, Object object) override {
+        if constexpr (HasOperatorArrayAccess<T>::value)
+            value[index] = object.as<std::decay_t<decltype(value[index])>>();
+        else
+            throw_exception("type \"", type_name(), "\" does not have operator \"[]\"");
     }
 
     struct Accessor {
@@ -409,8 +470,8 @@ struct InternalObject : BaseObject {
         throw_exception("cannot get pointer to internal type");
         return nullptr;
     };
-    void assign(const BaseObject* src) override {
-        auto ptr = dynamic_cast<const InternalObject*>(src);
+    void assign(const BaseObject* rhs) override {
+        auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
             throw_exception("assign external type to internal type is not allowed");
         for (auto& member : ptr->members)
@@ -443,6 +504,14 @@ struct InternalObject : BaseObject {
             throw_exception("divide internal type by internal type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] /= member.second;
+    }
+    void increment() override {
+        for (auto& member : members)
+            ++member.second;
+    }
+    void decrement() override {
+        for (auto& member : members)
+            --member.second;
     }
     bool less_than(BaseObject* rhs) const override {
         for (const auto& it : rhs->members)
@@ -480,10 +549,12 @@ struct InternalObject : BaseObject {
                 return true;
         return false;
     }
-    Object array_access(size_t) override {
-        static Object null_object;
+    Object get_element(size_t) const override {
         throw_exception("internal type does not support operator []");
-        return null_object;
+        return {};
+    }
+    void set_element(size_t, Object) override {
+        throw_exception("internal type does not support operator []");
     }
 };
 
@@ -842,7 +913,7 @@ struct MemberAccess : BinaryOp {
     void set_precedence(int prec) override {
         precedence = prec;
     }
-    int precedence = 8;
+    int precedence = 10;
 };
 
 struct MemberFunctionCall : PostUnaryOp {
@@ -858,7 +929,7 @@ struct MemberFunctionCall : PostUnaryOp {
     void set_precedence(int prec) override {
         precedence = prec;
     }
-    int precedence = 8;
+    int precedence = 10;
 
     std::string function_name;
     std::vector<Expression> arguments;
@@ -883,7 +954,7 @@ struct ArrayAccess : BinaryOp {
         precedence = prec;
     }
 
-    int precedence = 2;
+    int precedence = 10;
 };
 
 struct TypeOp : BaseOp {
@@ -973,51 +1044,69 @@ struct Division : BinaryOp {
     int precedence = 5;
 };
 
-// struct PostIncrement : PostUnaryOp {
-//     Object evaluate(Scope& scope) override {
-//         auto old = operand->evaluate(scope);
-//         operand->assign(scope, ++operand->evaluate(scope));
-//         return old;
-//     }
+struct PostIncrement : PostUnaryOp {
+    Object evaluate(const Scope& scope) const override {
+        auto old = operand->evaluate(scope);
+        operand->assign(scope, ++operand->evaluate(scope));
+        return old;
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
-//     int precedence = 8;
-// };
+    int precedence = 8;
+};
 
-// struct PostDecrement : PostUnaryOp {
-//     Object evaluate(Scope& scope) override {
-//         auto old = operand->evaluate(scope);
-//         operand->assign(scope, --operand->evaluate(scope));
-//         return old;
-//     }
+struct PostDecrement : PostUnaryOp {
+    Object evaluate(const Scope& scope) const override {
+        auto old = operand->evaluate(scope);
+        operand->assign(scope, --operand->evaluate(scope));
+        return old;
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
-//     int precedence = 8;
-// };
+    int precedence = 8;
+};
 
-// struct PreIncrement : PreUnaryOp {
-//     Object evaluate(Scope& scope) override { return operand->assign(scope,
-//     ++operand->evaluate(scope)); }
+struct PreIncrement : PreUnaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return operand->assign(scope, ++operand->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
-//     int precedence = 8;
-// };
+    int precedence = 8;
+};
 
-// struct PreDecrement : PreUnaryOp {
-//     Object evaluate(Scope& scope) override { return operand->assign(scope,
-//     --operand->evaluate(scope)); }
+struct PreDecrement : PreUnaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return operand->assign(scope, --operand->evaluate(scope));
+    }
 
-//     int get_precedence() const override { return precedence; }
-//     void set_precedence(int prec) override { precedence = prec; }
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
 
-//     int precedence = 8;
-// };
+    int precedence = 8;
+};
 
 struct LessThan : BinaryOp {
     Object evaluate(const Scope& scope) const override {
@@ -1126,6 +1215,38 @@ struct RightParenthese : Operand {
     }
     Object evaluate(const Scope&) const override {
         throw_exception("RightParenthese::evaluate() shall not be called");
+        return {};
+    }
+    int get_precedence() const override {
+        return 0;
+    }
+    void set_precedence(int) override {
+    }
+};
+
+struct LeftSquareBracket : Operand {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
+        throw_exception("LeftSquareBracket::collapse() shall not be called");
+        return {};
+    }
+    Object evaluate(const Scope&) const override {
+        throw_exception("LeftSquareBracket::evaluate() shall not be called");
+        return {};
+    }
+    int get_precedence() const override {
+        return 0;
+    }
+    void set_precedence(int) override {
+    }
+};
+
+struct RightSquareBracket : Operand {
+    std::vector<int> collapse(const std::vector<std::shared_ptr<Operand>>&, int) override {
+        throw_exception("RightSquareBracket::collapse() shall not be called");
+        return {};
+    }
+    Object evaluate(const Scope&) const override {
+        throw_exception("RightSquareBracket::evaluate() shall not be called");
         return {};
     }
     int get_precedence() const override {

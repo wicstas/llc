@@ -6,10 +6,6 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
     Token prev;
 
     while (!no_more()) {
-        bool is_new_line = advance().location.line == prev.location.line + 1;
-        putback();
-        if (end_on_new_line && is_new_line)
-            break;
         if (match(TokenType::RightCurlyBracket)) {
             putback();
             break;
@@ -28,6 +24,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                         throw_exception("cannot declare variable of type \"void\":\n",
                                         token->location(source));
                     declare_variable(scope);
+
                     must_match(TokenType::Semicolon);
                 }
 
@@ -138,7 +135,8 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
             }
 
         } else if (auto token = match(TokenType::Semicolon)) {
-            continue;
+            if (end_on_new_line)
+                return;
 
         } else if (match(TokenType::Star)) {
             putback();
@@ -229,7 +227,9 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
 
     while (true) {
         auto token = advance();
+
         LLC_CHECK(token.type != TokenType::Invalid);
+
         if (token.type == TokenType::Eof || token.type == TokenType::Semicolon ||
             token.type == TokenType::Comma) {
             putback();
@@ -259,15 +259,17 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             }
         } else if (token.type == TokenType::Assign)
             expression.operands.push_back(std::make_shared<Assignment>());
-        // else if (token.type == TokenType::Increment && prev.type == TokenType::Identifier)
-        //     expression.operands.push_back(std::make_shared<PostIncrement>());
-        // else if (token.type == TokenType::Increment && prev.type != TokenType::Identifier)
-        //     expression.operands.push_back(std::make_shared<PreIncrement>());
-        // else if (token.type == TokenType::Decrement && prev.type == TokenType::Identifier)
-        //     expression.operands.push_back(std::make_shared<PostIncrement>());
-        // else if (token.type == TokenType::Decrement && prev.type != TokenType::Identifier)
-        //     expression.operands.push_back(std::make_shared<PreIncrement>());
-        else if (token.type == TokenType::Plus)
+        else if (token.type == TokenType::Increment) {
+            if (prev.type & (TokenType::Identifier | TokenType::RightSquareBracket))
+                expression.operands.push_back(std::make_shared<PostIncrement>());
+            else
+                expression.operands.push_back(std::make_shared<PreIncrement>());
+        } else if (token.type == TokenType::Decrement) {
+            if (prev.type & (TokenType::Identifier | TokenType::RightSquareBracket))
+                expression.operands.push_back(std::make_shared<PostDecrement>());
+            else
+                expression.operands.push_back(std::make_shared<PreDecrement>());
+        } else if (token.type == TokenType::Plus)
             expression.operands.push_back(std::make_shared<Addition>());
         else if (token.type == TokenType::Minus)
             expression.operands.push_back(std::make_shared<Subtraction>());
@@ -275,12 +277,12 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<Multiplication>());
         else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
-        else if (token.type == TokenType::LeftSquareBracket)
+        else if (token.type == TokenType::LeftSquareBracket) {
             expression.operands.push_back(std::make_shared<ArrayAccess>());
-        else if (token.type == TokenType::RightSquareBracket) {
-            // do nothing
-         }
-        else if (token.type == TokenType::LessThan)
+            expression.operands.push_back(std::make_shared<LeftSquareBracket>());
+        } else if (token.type == TokenType::RightSquareBracket) {
+            expression.operands.push_back(std::make_shared<RightSquareBracket>());
+        } else if (token.type == TokenType::LessThan)
             expression.operands.push_back(std::make_shared<LessThan>());
         else if (token.type == TokenType::LessEqual)
             expression.operands.push_back(std::make_shared<LessEqual>());

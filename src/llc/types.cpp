@@ -6,8 +6,8 @@ namespace llc {
 
 std::map<size_t, std::string> type_id_to_name = {
     {typeid(int).hash_code(), "int"},           {typeid(uint8_t).hash_code(), "uint8_t"},
-    {typeid(uint16_t).hash_code(), "uint16_t"}, {typeid(uint32_t).hash_code(), "uin32_t"},
-    {typeid(uint64_t).hash_code(), "uin64_t"},  {typeid(float).hash_code(), "float"},
+    {typeid(uint16_t).hash_code(), "uint16_t"}, {typeid(uint32_t).hash_code(), "uint32_t"},
+    {typeid(uint64_t).hash_code(), "uint64_t"},  {typeid(float).hash_code(), "float"},
     {typeid(double).hash_code(), "double"},     {typeid(std::string).hash_code(), "string"},
     {typeid(bool).hash_code(), "bool"},
 };
@@ -43,6 +43,12 @@ std::string enum_to_string(TokenType type) {
     if (str.back() == '|')
         str.pop_back();
     return str;
+}
+
+Object& BaseObject::get_member(std::string name) {
+    if (members.find(name) == members.end())
+        throw_exception("cannot find member \"", name, "\"");
+    return members[name];
 }
 
 Scope::Scope() {
@@ -154,10 +160,12 @@ void Expression::apply_parenthese() {
     int depth = 0;
 
     for (int i = 0; i < (int)operands.size(); i++) {
-        if (dynamic_cast<LeftParenthese*>(operands[i].get())) {
+        if (dynamic_cast<LeftParenthese*>(operands[i].get()) ||
+            dynamic_cast<LeftSquareBracket*>(operands[i].get())) {
             depth++;
             parenthese_indices.push_back(i);
-        } else if (dynamic_cast<RightParenthese*>(operands[i].get())) {
+        } else if (dynamic_cast<RightParenthese*>(operands[i].get()) ||
+                   dynamic_cast<RightSquareBracket*>(operands[i].get())) {
             depth--;
             parenthese_indices.push_back(i);
         } else {
@@ -220,25 +228,28 @@ std::optional<Object> IfElseChain::run(const Scope& scope) const {
     return std::nullopt;
 }
 
-std::optional<Object> For::run(const Scope&) const {
+std::optional<Object> For::run(const Scope& scope) const {
     LLC_CHECK(action != nullptr);
-    // for (; condition(*internal_scope)->as<bool>(); updation(*internal_scope)->as<bool>()) {
-    //     auto result = action->run(scope);
-
-    //     if (result.is_return)
-    //         return result;
-    // }
+    for (; condition(*internal_scope)->as<bool>(); updation(*internal_scope)->as<bool>()) {
+        try {
+            action->run(scope);
+        } catch (const std::optional<Object> object) {
+            return object;
+        }
+    }
     return std::nullopt;
 }
 
-std::optional<Object> While::run(const Scope&) const {
+std::optional<Object> While::run(const Scope& scope) const {
     LLC_CHECK(action != nullptr);
 
-    // while (condition(scope)->as<bool>()) {
-    //     auto result = action->run(scope);
-    //     if (result.is_return)
-    //         return result;
-    // }
+    while (condition(scope)->as<bool>()) {
+        try {
+            action->run(scope);
+        } catch (const std::optional<Object> object) {
+            return object;
+        }
+    }
     return std::nullopt;
 }
 

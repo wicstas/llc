@@ -110,6 +110,34 @@ struct HasOperatorArrayAccess {
     static constexpr bool value = decltype(check<T>(0))::value;
 };
 
+template <typename T>
+struct HasOperatorPreIncrement {
+    template <typename U>
+    static constexpr std::true_type check(std::decay_t<decltype(++std::declval<U&>())>*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+    static constexpr bool value = decltype(check<T>(0))::value;
+};
+
+template <>
+struct HasOperatorPreIncrement<bool> {
+    static constexpr bool value = false;
+};
+
+template <typename T>
+struct HasOperatorPreDecrement {
+    template <typename U>
+    static constexpr std::true_type check(std::decay_t<decltype(--std::declval<U&>())>*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+    static constexpr bool value = decltype(check<T>(0))::value;
+};
+
+template <>
+struct HasOperatorPreDecrement<bool> {
+    static constexpr bool value = false;
+};
+
 template <typename... Ts>
 struct TypePack;
 
@@ -131,6 +159,11 @@ struct TypePack<T, Ts...> : TypePack<Ts...> {
             return rest::template at<index - 1>();
     }
 };
+
+template <typename... Args, typename T, typename R>
+auto overload_cast(R (T::*func)(Args...)) {
+    return func;
+}
 
 }  // namespace llc
 
