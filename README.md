@@ -42,7 +42,7 @@ int main() {
     program.run();
 
     try {
-        //get a reference to a varaible defined inside program
+        //get a reference to a variable defined inside program
         auto& list = program["list"].as<vectori&>();
 
         //run function defined inside program
