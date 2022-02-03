@@ -1,4 +1,4 @@
-a work-in-progress c-like scripting language
+a work-in-progress c++ like scripting language
 
 example:
 ```
