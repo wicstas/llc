@@ -27,6 +27,7 @@ int main() {
     program.bind("printi", print<int>);
 
     using vectori = std::vector<int>;
+    
     // bind a class and its methods
     program.bind<vectori>("vectori")
         .bind("resize", overload_cast<size_t>(&vectori::resize))
@@ -38,8 +39,10 @@ int main() {
 
     // get variable from program
     try {
+        //get a reference to a varaible defined inside program
         auto& list = program["list"].as<vectori&>();
 
+        //run function defined inside program
         for (int i = 5; i < 10; i++)
             list.push_back(program["fibonacci"](i)->as<int>());
 
