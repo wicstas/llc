@@ -24,8 +24,6 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                         throw_exception("cannot declare variable of type \"void\":\n",
                                         token->location(source));
                     declare_variable(scope);
-
-                    must_match(TokenType::Semicolon);
                 }
 
             } else if (auto var = scope->find_variable(token->id)) {
@@ -34,11 +32,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
 
             } else if (auto function = scope->find_function(token->id)) {
                 scope->statements.push_back(
-                    std::make_shared<FunctionCall>(build_functioncall(scope, *function)));
-
-            } else if (program->functions.find(token->id) != program->functions.end()) {
-                scope->statements.push_back(std::make_shared<FunctionCall>(
-                    build_functioncall(scope, program->functions.find(token->id)->second)));
+                    std::make_shared<FunctionCall>(build_functioncall(scope, token->id)));
 
             } else if (token->id == "struct") {
                 declare_struct(scope);
@@ -46,7 +40,6 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
 
             } else if (token->id == "return") {
                 scope->statements.push_back(std::make_shared<Return>(build_expression(scope)));
-                must_match(TokenType::Semicolon);
 
             } else if (token->id == "if") {
                 std::vector<Expression> exprs;
@@ -70,6 +63,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                         putback();
                         break;
                     }
+
                     must_match(TokenType::LeftParenthese);
 
                     exprs.push_back(build_expression(scope));
@@ -81,6 +75,7 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                         actions.push_back(parse_recursively_topdown(scope, true));
                     }
                 }
+
                 if (advance().id != "else") {
                     putback();
                 } else {
@@ -175,6 +170,7 @@ void Parser::declare_function(std::shared_ptr<Scope> scope) {
     auto return_type_token = must_match(TokenType::Identifier);
     auto func_token = must_match(TokenType::Identifier);
     auto func = std::make_unique<InternalFunction>();
+    scope->functions[func_token.id] = {};
 
     func->return_type = return_type_token.id == "void"
                             ? std::nullopt
@@ -280,11 +276,17 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 expression.operands.push_back(std::make_shared<PostDecrement>());
             else
                 expression.operands.push_back(std::make_shared<PreDecrement>());
-        } else if (token.type == TokenType::Plus)
-            expression.operands.push_back(std::make_shared<Addition>());
-        else if (token.type == TokenType::Minus)
-            expression.operands.push_back(std::make_shared<Subtraction>());
-        else if (token.type == TokenType::Star)
+        } else if (token.type == TokenType::Plus) {
+            if (prev.type & (TokenType::Number | TokenType::RightSquareBracket |
+                             TokenType::RightParenthese | TokenType::Identifier))
+                expression.operands.push_back(std::make_shared<Addition>());
+        } else if (token.type == TokenType::Minus) {
+            if (prev.type & (TokenType::Number | TokenType::RightSquareBracket |
+                             TokenType::RightParenthese | TokenType::Identifier))
+                expression.operands.push_back(std::make_shared<Subtraction>());
+            else
+                expression.operands.push_back(std::make_shared<Negation>());
+        } else if (token.type == TokenType::Star)
             expression.operands.push_back(std::make_shared<Multiplication>());
         else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
@@ -325,10 +327,7 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));
             else if (auto function = scope->find_function(token.id)) {
                 expression.operands.push_back(
-                    std::make_shared<FunctionCallOp>(build_functioncall(scope, *function)));
-            } else if (program->functions.find(token.id) != program->functions.end()) {
-                expression.operands.push_back(std::make_shared<FunctionCallOp>(
-                    build_functioncall(scope, program->functions.find(token.id)->second)));
+                    std::make_shared<FunctionCallOp>(build_functioncall(scope, token.id)));
             } else {
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));
                 // throw_exception("\"", token.id, "\" is neither a function nor a variable:\n",
@@ -346,10 +345,10 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
     return expression;
 }
 
-FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope, Function function) {
+FunctionCall Parser::build_functioncall(std::shared_ptr<Scope> scope, std::string function_name) {
     FunctionCall call;
 
-    call.function = function;
+    call.function_name = function_name;
     must_match(TokenType::LeftParenthese);
 
     while (!match(TokenType::RightParenthese)) {

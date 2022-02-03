@@ -76,11 +76,7 @@ std::optional<Object> Scope::run(const Scope&) const {
         LLC_CHECK(statement != nullptr);
 
     for (const auto& statement : statements) {
-        try {
-            statement->run(*this);
-        } catch (const std::optional<Object>& result) {
-            return result;
-        }
+        statement->run(*this);
     }
 
     return std::nullopt;
@@ -116,7 +112,7 @@ Object& Scope::get_variable(std::string name) const {
         return it->second;
 }
 
-BaseObject* InternalObject::clone() const  {
+BaseObject* InternalObject::clone() const {
     InternalObject* object = new InternalObject(*this);
     for (auto& func : object->functions) {
         for (auto& var : object->members)
@@ -135,21 +131,31 @@ std::optional<Object> InternalFunction::run(const Scope& scope,
     for (int i = 0; i < (int)exprs.size(); i++)
         LLC_CHECK(definition->variables.find(parameters[i]) != definition->variables.end());
 
+    std::map<std::string, Object> temp;
+
     for (int i = 0; i < (int)exprs.size(); i++)
-        if (auto result = exprs[i](scope))
-            definition->variables[parameters[i]] = *result;
-        else
+        if (auto result = exprs[i](scope)) {
+            temp[parameters[i]] = *result;
+        } else
             throw_exception("void cannot be used as function parameter");
 
-    for (auto& var : this_scope)
+    for (const auto& var : temp)
+        definition->variables[var.first] = var.second;
+
+    for (const auto& var : this_scope)
         definition->variables[var.first] = *var.second;
-    std::optional<Object> result = definition->run(scope);
+
+    std::optional<Object> result;
+    try {
+        result = definition->run(scope);
+    } catch (const std::optional<Object>& ret) {
+        result = ret;
+    }
+
     for (auto& var : this_scope)
         *var.second = definition->variables[var.first];
 
     if (result.has_value() != return_type.has_value())
-        throw_exception("function does not return the type specified at its declaration");
-    else if (result.has_value() && (result->type_name() != return_type->type_name()))
         throw_exception("function does not return the type specified at its declaration");
     return result;
 }
@@ -236,21 +242,15 @@ std::optional<Object> IfElseChain::run(const Scope& scope) const {
 
     for (int i = 0; i < (int)conditions.size(); i++) {
         try {
-            if (conditions[i](scope)->as<bool>()) {
+            if (conditions[i](scope)->as<bool>())
                 actions[i]->run(scope);
-                throw std::optional<Object>(std::nullopt);
-            }
-        } catch (const std::optional<Object> object) {
-            return object;
+        } catch (const std::optional<Object>& object) {
+            throw object;
         }
     }
 
     if (conditions.size() == actions.size() - 1) {
-        try {
-            actions.back()->run(scope);
-        } catch (const std::optional<Object> object) {
-            return object;
-        }
+        actions.back()->run(scope);
     }
 
     return std::nullopt;
@@ -258,13 +258,11 @@ std::optional<Object> IfElseChain::run(const Scope& scope) const {
 
 std::optional<Object> For::run(const Scope& scope) const {
     LLC_CHECK(action != nullptr);
+
     for (; condition(*internal_scope)->as<bool>(); updation(*internal_scope)->as<bool>()) {
-        try {
-            action->run(scope);
-        } catch (const std::optional<Object> object) {
-            return object;
-        }
+        action->run(scope);
     }
+
     return std::nullopt;
 }
 
@@ -272,11 +270,7 @@ std::optional<Object> While::run(const Scope& scope) const {
     LLC_CHECK(action != nullptr);
 
     while (condition(scope)->as<bool>()) {
-        try {
-            action->run(scope);
-        } catch (const std::optional<Object> object) {
-            return object;
-        }
+        action->run(scope);
     }
     return std::nullopt;
 }

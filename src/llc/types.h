@@ -97,6 +97,7 @@ struct BaseObject {
     virtual void sub(BaseObject* rhs) = 0;
     virtual void mul(BaseObject* rhs) = 0;
     virtual void div(BaseObject* rhs) = 0;
+    virtual Object neg() const = 0;
     virtual void increment() = 0;
     virtual void decrement() = 0;
     virtual bool less_than(BaseObject* rhs) const = 0;
@@ -235,6 +236,9 @@ struct Object {
         base->div(rhs.base.get());
         return *this;
     }
+    Object operator-() {
+        return base->neg();
+    }
     Object& operator++() {
         LLC_CHECK(base != nullptr);
         base->increment();
@@ -370,6 +374,13 @@ struct ConcreteObject : BaseObject {
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"/\"");
     }
+    Object neg() const override {
+        if constexpr (HasOperatorNegation<T>::value)
+            return Object(-value);
+        else
+            throw_exception("type \"", type_name(), "\" does not have operator \"/\"");
+        return {};
+    }
     void increment() override {
         if constexpr (HasOperatorPreIncrement<T>::value)
             ++value;
@@ -486,23 +497,30 @@ struct InternalObject : BaseObject {
     void sub(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            throw_exception("subtract internal type by internal type is not allowed");
+            throw_exception("subtract internal type by external type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] -= member.second;
     }
     void mul(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            throw_exception("multiply internal type by internal type is not allowed");
+            throw_exception("multiply internal type by external type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] *= member.second;
     }
     void div(BaseObject* rhs) override {
         auto ptr = dynamic_cast<const InternalObject*>(rhs);
         if (ptr == nullptr)
-            throw_exception("divide internal type by internal type is not allowed");
+            throw_exception("divide internal type by external type is not allowed");
         for (auto& member : ptr->members)
             members[member.first] /= member.second;
+    }
+    Object neg() const override {
+        std::unique_ptr<BaseObject> copy(clone());
+        InternalObject* ptr = dynamic_cast<InternalObject*>(copy.get());
+        for (auto& member : ptr->members)
+            ptr->members[member.first] = -member.second;
+        return Object(std::move(copy));
     }
     void increment() override {
         for (auto& member : members)
@@ -605,8 +623,47 @@ struct ConcreteFunction : ExternalFunction {
             else if constexpr (sizeof...(Args) == 2)
                 f(args[0].as<decltype(types.template at<0>())>(),
                   args[1].as<decltype(types.template at<1>())>());
+            else if constexpr (sizeof...(Args) == 3)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[1].as<decltype(types.template at<1>())>(),
+                  args[2].as<decltype(types.template at<2>())>());
+            else if constexpr (sizeof...(Args) == 4)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[1].as<decltype(types.template at<1>())>(),
+                  args[2].as<decltype(types.template at<2>())>(),
+                  args[3].as<decltype(types.template at<3>())>());
+            else if constexpr (sizeof...(Args) == 5)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[1].as<decltype(types.template at<1>())>(),
+                  args[2].as<decltype(types.template at<2>())>(),
+                  args[3].as<decltype(types.template at<3>())>(),
+                  args[4].as<decltype(types.template at<4>())>());
+            else if constexpr (sizeof...(Args) == 6)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[1].as<decltype(types.template at<1>())>(),
+                  args[2].as<decltype(types.template at<2>())>(),
+                  args[3].as<decltype(types.template at<3>())>(),
+                  args[4].as<decltype(types.template at<4>())>(),
+                  args[5].as<decltype(types.template at<5>())>());
+            else if constexpr (sizeof...(Args) == 7)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[1].as<decltype(types.template at<1>())>(),
+                  args[2].as<decltype(types.template at<2>())>(),
+                  args[3].as<decltype(types.template at<3>())>(),
+                  args[4].as<decltype(types.template at<4>())>(),
+                  args[5].as<decltype(types.template at<5>())>(),
+                  args[6].as<decltype(types.template at<6>())>());
+            else if constexpr (sizeof...(Args) == 8)
+                f(args[0].as<decltype(types.template at<0>())>(),
+                  args[1].as<decltype(types.template at<1>())>(),
+                  args[2].as<decltype(types.template at<2>())>(),
+                  args[3].as<decltype(types.template at<3>())>(),
+                  args[4].as<decltype(types.template at<4>())>(),
+                  args[5].as<decltype(types.template at<5>())>(),
+                  args[6].as<decltype(types.template at<6>())>(),
+                  args[7].as<decltype(types.template at<7>())>());
             else
-                throw_exception("too many arguments, only support <= 4");
+                throw_exception("too many arguments, only support <= 8");
 
         } else {
             if constexpr (sizeof...(Args) == 0)
@@ -616,8 +673,47 @@ struct ConcreteFunction : ExternalFunction {
             else if constexpr (sizeof...(Args) == 2)
                 return f(args[0].as<decltype(types.template at<0>())>(),
                          args[1].as<decltype(types.template at<1>())>());
+            else if constexpr (sizeof...(Args) == 3)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[1].as<decltype(types.template at<1>())>(),
+                         args[2].as<decltype(types.template at<2>())>());
+            else if constexpr (sizeof...(Args) == 4)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[1].as<decltype(types.template at<1>())>(),
+                         args[2].as<decltype(types.template at<2>())>(),
+                         args[3].as<decltype(types.template at<3>())>());
+            else if constexpr (sizeof...(Args) == 5)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[1].as<decltype(types.template at<1>())>(),
+                         args[2].as<decltype(types.template at<2>())>(),
+                         args[3].as<decltype(types.template at<3>())>(),
+                         args[4].as<decltype(types.template at<4>())>());
+            else if constexpr (sizeof...(Args) == 6)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[1].as<decltype(types.template at<1>())>(),
+                         args[2].as<decltype(types.template at<2>())>(),
+                         args[3].as<decltype(types.template at<3>())>(),
+                         args[4].as<decltype(types.template at<4>())>(),
+                         args[5].as<decltype(types.template at<5>())>());
+            else if constexpr (sizeof...(Args) == 7)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[1].as<decltype(types.template at<1>())>(),
+                         args[2].as<decltype(types.template at<2>())>(),
+                         args[3].as<decltype(types.template at<3>())>(),
+                         args[4].as<decltype(types.template at<4>())>(),
+                         args[5].as<decltype(types.template at<5>())>(),
+                         args[6].as<decltype(types.template at<6>())>());
+            else if constexpr (sizeof...(Args) == 8)
+                return f(args[0].as<decltype(types.template at<0>())>(),
+                         args[1].as<decltype(types.template at<1>())>(),
+                         args[2].as<decltype(types.template at<2>())>(),
+                         args[3].as<decltype(types.template at<3>())>(),
+                         args[4].as<decltype(types.template at<4>())>(),
+                         args[5].as<decltype(types.template at<5>())>(),
+                         args[6].as<decltype(types.template at<6>())>(),
+                         args[7].as<decltype(types.template at<7>())>());
             else
-                throw_exception("too many arguments, only support <= 4");
+                throw_exception("too many arguments, only support <= 8");
         }
 
         return {};
@@ -1113,6 +1209,21 @@ struct PreDecrement : PreUnaryOp {
     int precedence = 8;
 };
 
+struct Negation : PreUnaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return -operand->evaluate(scope);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+
+    int precedence = 8;
+};
+
 struct LessThan : BinaryOp {
     Object evaluate(const Scope& scope) const override {
         return Object(a->evaluate(scope) < b->evaluate(scope));
@@ -1281,10 +1392,14 @@ struct Expression : Statement {
 
 struct FunctionCall : Statement {
     std::optional<Object> run(const Scope& scope) const override {
-        return function.run(scope, arguments);
+        if (auto func = scope.find_function(function_name))
+            return func->run(scope, arguments);
+        else
+            throw_exception("cannot find function \"", function_name, "\"");
+        return std::nullopt;
     }
 
-    Function function;
+    std::string function_name;
     std::vector<Expression> arguments;
 };
 
@@ -1426,13 +1541,86 @@ struct Program {
     void run() {
         try {
             scope->run(*scope);
+        } catch (const std::optional<Object>&) {
         } catch (const Exception& throw_exception) {
             print(throw_exception(source));
         }
     }
 
-    Object& operator[](std::string name) const {
-        return scope->variables[name];
+    struct Proxy {
+        Proxy() = default;
+        Proxy(std::shared_ptr<Scope> scope, Object& object) : scope(scope), object(&object) {
+        }
+        Proxy(std::shared_ptr<Scope> scope, Function func) : scope(scope), func(func) {
+        }
+
+        template <typename T>
+        T as() {
+            LLC_CHECK(object != nullptr);
+            return object->as<T>();
+        }
+
+        template <typename T>
+        std::optional<T> as_opt() {
+            LLC_CHECK(object != nullptr);
+            return object->as_opt<T>();
+        }
+
+        template <typename T>
+        struct expr_helper_struct : BaseOp {
+            expr_helper_struct(T value) : object(value) {
+            }
+
+            Object evaluate(const Scope&) const {
+                return object;
+            }
+            Object& original(const Scope&) const {
+                return object;
+            }
+            Object assign(const Scope&, const Object& object) {
+                return this->object = object;
+            }
+            int get_precedence() const {
+                return 10;
+            }
+            void set_precedence(int) {
+            }
+
+            mutable Object object;
+        };
+
+        template <typename T, typename... Args>
+        void expr_helper(std::vector<Expression>& exprs, T first, Args... rest) const {
+            Expression expr;
+            expr.operands.push_back(std::make_shared<expr_helper_struct<T>>(first));
+            exprs.push_back(expr);
+            if constexpr (sizeof...(rest) > 0)
+                expr_helper(exprs, rest...);
+        }
+
+        template <typename... Args>
+        std::optional<Object> operator()(Args... args) const {
+            LLC_CHECK(object == nullptr);
+
+            std::vector<Expression> exprs;
+            if constexpr (sizeof...(args) != 0)
+                expr_helper(exprs, args...);
+            return func.run(*scope, exprs);
+        }
+
+        std::shared_ptr<Scope> scope = nullptr;
+        Object* object = nullptr;
+        Function func;
+    };
+
+    Proxy operator[](std::string name) const {
+        if (scope->find_variable(name))
+            return Proxy(scope, scope->variables[name]);
+        else if (scope->find_function(name))
+            return Proxy(scope, scope->functions[name]);
+        else
+            throw_exception("\"", name, " is neither a function nor a variable");
+        return {};
     }
 
     std::string source;

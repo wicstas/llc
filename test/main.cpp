@@ -6,38 +6,29 @@ int main() {
     Program program;
 
     program.source = R"(
-        struct vector{
-            void create(int size){
-                for(int i = 0; i < size; i++){
-                    if(base.size() < 2)
-                        base.push_back(1);
-                    else
-                        base.push_back(base[i - 2] + base[i - 1]);
-                }
-            }
+        int fibonacci_impl(int a, int b, int n){
+            if(n == 0)
+                return a;
+            else
+                 return fibonacci_impl(b, a + b, n - 1);
+        }
+        
+        int fibonacci(int n){
+            return fibonacci_impl(0,1,n);
+        }
 
-            void print(){
-                for(int i = 0; i < base.size(); i++)
-                    printi(base[i]);
-            }
+        vectori list;
 
-            vectori base;
-            int number = 0;
-        };
-
-        vector vec;
-        vec.create(10);
-        vec.print();
-
-        vectori list = vec.base;
+        for(int i = 0;i < 5;i++)
+            list.push_back(fibonacci(i));
     )";
 
+    // bind a function
     program.bind("printi", print<int>);
 
     using vectori = std::vector<int>;
-
+    // bind a class and its methods
     program.bind<vectori>("vectori")
-        .bind("size", &vectori::size)
         .bind("resize", overload_cast<size_t>(&vectori::resize))
         .bind("push_back", overload_cast<const int&>(&vectori::push_back));
 
@@ -45,10 +36,13 @@ int main() {
     compiler.compile(program);
     program.run();
 
+    // get variable from program
     try {
         auto& list = program["list"].as<vectori&>();
 
-        print("size of list: ", list.size());
+        for (int i = 5; i < 10; i++)
+            list.push_back(program["fibonacci"](i)->as<int>());
+
         for (int i = 0; i < (int)list.size(); i++)
             print("#", i, ": ", list[i]);
 

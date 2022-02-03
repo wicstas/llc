@@ -138,6 +138,15 @@ struct HasOperatorPreDecrement<bool> {
     static constexpr bool value = false;
 };
 
+template <typename T>
+struct HasOperatorNegation {
+    template <typename U>
+    static constexpr std::true_type check(std::decay_t<decltype(-std::declval<U>())>*);
+    template <typename U>
+    static constexpr std::false_type check(...);
+    static constexpr bool value = decltype(check<T>(0))::value;
+};
+
 template <typename... Ts>
 struct TypePack;
 

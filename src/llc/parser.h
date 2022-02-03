@@ -25,6 +25,8 @@ struct Parser {
         std::shared_ptr<Scope> scope = std::make_shared<Scope>();
         for (const auto& type : program->types)
             scope->types[type.first] = type.second;
+        for (const auto& function : program->functions)
+            scope->functions[function.first] = function.second;
 
         parse_recursively(scope);
         program->scope = scope;
@@ -44,7 +46,7 @@ struct Parser {
     void declare_variable(std::shared_ptr<Scope> scope);
     void declare_function(std::shared_ptr<Scope> scope);
     void declare_struct(std::shared_ptr<Scope> scope);
-    FunctionCall build_functioncall(std::shared_ptr<Scope> scope, Function function);
+    FunctionCall build_functioncall(std::shared_ptr<Scope> scope, std::string function_name);
     Expression build_expression(std::shared_ptr<Scope> scope);
 
     std::optional<Token> match(TokenType type);
