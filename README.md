@@ -1,7 +1,7 @@
 a work-in-progress c++ like scripting language
 
 example:
-```
+```c++
 #include <llc/compiler.h>
 
 using namespace llc;
