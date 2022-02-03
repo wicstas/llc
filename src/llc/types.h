@@ -1544,8 +1544,6 @@ struct Program {
         try {
             scope->run(*scope);
         } catch (const std::optional<Object>&) {
-        } catch (const Exception& throw_exception) {
-            print(throw_exception(source));
         }
     }
 

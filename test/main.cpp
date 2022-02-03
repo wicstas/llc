@@ -2,10 +2,11 @@
 
 using namespace llc;
 
-int main() {
-    Program program;
+void function_test() {
+    try {
+        Program program;
 
-    program.source = R"(
+        program.source = R"(
         int fibonacci_impl(int a, int b, int n){
             if(n == 0)
                 return a;
@@ -21,7 +22,42 @@ int main() {
 
         for(int i = 0;i < 5;i++)
             list.push_back(fibonacci(i));
+    )";
 
+        // bind function
+        program.bind("printi", print<int>);
+
+        using vectori = std::vector<int>;
+
+        // bind class and its methods
+        program.bind<vectori>("vectori")
+            .bind("resize", overload_cast<size_t>(&vectori::resize))
+            .bind("push_back", overload_cast<const int&>(&vectori::push_back));
+
+        Compiler compiler;
+        compiler.compile(program);
+        program.run();
+
+        // get reference to varaible defined inside program
+        auto& list = program["list"].as<vectori&>();
+
+        // run function defined inside program
+        for (int i = 5; i < 10; i++)
+            list.push_back(program["fibonacci"](i).as<int>());
+
+        for (int i = 0; i < (int)list.size(); i++)
+            print("#", i, ": ", list[i]);
+
+    } catch (const std::exception& exception) {
+        print(exception.what());
+    }
+}
+
+void struct_test(){
+        try {
+        Program program;
+
+        program.source = R"(
         struct Number{
             void set(int n){
                 number = n;
@@ -41,33 +77,11 @@ int main() {
         x.number = 10;
     )";
 
-    // bind a function
-    program.bind("printi", print<int>);
-    program.bind("printf", print<float>);
+        Compiler compiler;
+        compiler.compile(program);
+        program.run();
 
-    using vectori = std::vector<int>;
-
-    // bind a class and its methods
-    program.bind<vectori>("vectori")
-        .bind("resize", overload_cast<size_t>(&vectori::resize))
-        .bind("push_back", overload_cast<const int&>(&vectori::push_back));
-
-    Compiler compiler;
-    compiler.compile(program);
-    program.run();
-
-    // get variable from program
-    try {
-        // get a reference to a varaible defined inside program
-        auto& list = program["list"].as<vectori&>();
-
-        // run function defined inside program
-        for (int i = 5; i < 10; i++)
-            list.push_back(program["fibonacci"](i).as<int>());
-
-        for (int i = 0; i < (int)list.size(); i++)
-            print("#", i, ": ", list[i]);
-
+        //call member function of struct defined inside program
         print("x.set(32);");
         program["x"]["set"](32);
 
@@ -79,6 +93,11 @@ int main() {
     } catch (const std::exception& exception) {
         print(exception.what());
     }
+}
+
+int main() {
+    function_test();
+    struct_test();
 
     return 0;
 }
