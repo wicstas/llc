@@ -48,7 +48,7 @@ int main() {
 
         //run function defined inside program
         for (int i = 5; i < 10; i++)
-            list.push_back(program["fibonacci"](i)->as<int>());
+            list.push_back(program["fibonacci"](i).as<int>());
 
         for (int i = 0; i < (int)list.size(); i++)
             print("#", i, ": ", list[i]);

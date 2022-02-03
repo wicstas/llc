@@ -212,6 +212,8 @@ void Parser::declare_struct(std::shared_ptr<Scope> scope) {
     LLC_CHECK(definition != nullptr);
     must_match(TokenType::RightCurlyBracket);
     std::unique_ptr<InternalObject> object = std::make_unique<InternalObject>(type_name.id);
+    definition->run(*scope);
+    
     for (auto& var : definition->variables)
         object->members[var.first] = var.second;
     for (auto& func : definition->functions)

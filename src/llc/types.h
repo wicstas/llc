@@ -201,13 +201,15 @@ struct Object {
 
     template <typename T>
     T as() const {
-        LLC_CHECK(base != nullptr);
+        if (base == nullptr)
+            throw_exception("cannot cast \"void\" to type \"", get_type_name<T>(), "\"");
         return base->as<T>();
     }
 
     template <typename T>
     std::optional<T> as_opt() const {
-        LLC_CHECK(base != nullptr);
+        if (base == nullptr)
+            throw_exception("cannot cast \"void\" to type \"", get_type_name<T>(), "\"");
         return base->as_opt<T>();
     }
 
@@ -1599,13 +1601,26 @@ struct Program {
         }
 
         template <typename... Args>
-        std::optional<Object> operator()(Args... args) const {
+        Object operator()(Args... args) const {
             LLC_CHECK(object == nullptr);
 
             std::vector<Expression> exprs;
             if constexpr (sizeof...(args) != 0)
                 expr_helper(exprs, args...);
-            return func.run(*scope, exprs);
+            auto object = func.run(*scope, exprs);
+            if (object.has_value())
+                return *object;
+            else
+                return {};
+        }
+
+        Proxy operator[](std::string name) {
+            LLC_CHECK(object != nullptr);
+            if (object->base->members.find(name) != object->base->members.end())
+                return Proxy(scope, object->base->members[name]);
+
+            LLC_CHECK(object->base->functions.find(name) != object->base->functions.end());
+            return Proxy(scope, object->base->functions[name]);
         }
 
         std::shared_ptr<Scope> scope = nullptr;
