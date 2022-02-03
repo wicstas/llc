@@ -5,10 +5,17 @@
 namespace llc {
 
 std::map<size_t, std::string> type_id_to_name = {
-    {typeid(int).hash_code(), "int"},           {typeid(uint8_t).hash_code(), "uint8_t"},
-    {typeid(uint16_t).hash_code(), "uint16_t"}, {typeid(uint32_t).hash_code(), "uint32_t"},
-    {typeid(uint64_t).hash_code(), "uint64_t"},  {typeid(float).hash_code(), "float"},
-    {typeid(double).hash_code(), "double"},     {typeid(std::string).hash_code(), "string"},
+    {typeid(int).hash_code(), "int"},
+    {typeid(uint8_t).hash_code(), "uint8_t"},
+    {typeid(uint16_t).hash_code(), "uint16_t"},
+    {typeid(uint32_t).hash_code(), "uint32_t"},
+    {typeid(uint64_t).hash_code(), "uint64_t"},
+    {typeid(int8_t).hash_code(), "int8_t"},
+    {typeid(int16_t).hash_code(), "int16_t"},
+    {typeid(int64_t).hash_code(), "int64_t"},
+    {typeid(float).hash_code(), "float"},
+    {typeid(double).hash_code(), "double"},
+    {typeid(std::string).hash_code(), "string"},
     {typeid(bool).hash_code(), "bool"},
 };
 
@@ -52,7 +59,14 @@ Object& BaseObject::get_member(std::string name) {
 }
 
 Scope::Scope() {
-    types["int"] = Object(0);
+    types["int"] = Object(int(0));
+    types["uint8_t"] = Object(uint8_t(0));
+    types["uint16_t"] = Object(uint16_t(0));
+    types["uint32_t"] = Object(uint32_t(0));
+    types["uint64_t"] = Object(uint64_t(0));
+    types["int8_t"] = Object(int8_t(0));
+    types["int16_t"] = Object(int16_t(0));
+    types["int64_t"] = Object(int64_t(0));
     types["float"] = Object(0.0f);
     types["double"] = Object(0.0);
     types["bool"] = Object(false);
@@ -68,6 +82,7 @@ std::optional<Object> Scope::run(const Scope&) const {
             return result;
         }
     }
+
     return std::nullopt;
 }
 std::optional<Object> Scope::find_type(std::string name) const {
@@ -101,6 +116,17 @@ Object& Scope::get_variable(std::string name) const {
         return it->second;
 }
 
+BaseObject* InternalObject::clone() const  {
+    InternalObject* object = new InternalObject(*this);
+    for (auto& func : object->functions) {
+        for (auto& var : object->members)
+            dynamic_cast<InternalFunction*>(func.second.base.get())->this_scope[var.first] =
+                &var.second;
+    }
+
+    return object;
+}
+
 std::optional<Object> InternalFunction::run(const Scope& scope,
                                             const std::vector<Expression>& exprs) const {
     LLC_CHECK(parameters.size() == exprs.size());
@@ -115,7 +141,12 @@ std::optional<Object> InternalFunction::run(const Scope& scope,
         else
             throw_exception("void cannot be used as function parameter");
 
+    for (auto& var : this_scope)
+        definition->variables[var.first] = *var.second;
     std::optional<Object> result = definition->run(scope);
+    for (auto& var : this_scope)
+        *var.second = definition->variables[var.first];
+
     if (result.has_value() != return_type.has_value())
         throw_exception("function does not return the type specified at its declaration");
     else if (result.has_value() && (result->type_name() != return_type->type_name()))
@@ -126,7 +157,6 @@ std::optional<Object> InternalFunction::run(const Scope& scope,
 std::optional<Object> ExternalFunction::run(const Scope& scope,
                                             const std::vector<Expression>& exprs) const {
     std::vector<Object> arguments;
-
     for (auto& expr : exprs) {
         if (auto result = expr(scope))
             arguments.push_back(*result);
@@ -137,14 +167,12 @@ std::optional<Object> ExternalFunction::run(const Scope& scope,
 }
 
 Object MemberFunctionCall::evaluate(const Scope& scope) const {
-    auto variable = dynamic_cast<VariableOp*>(operand.get());
-    LLC_CHECK(variable != nullptr);
-    if (variable->original(scope).base->functions.find(function_name) ==
-        variable->original(scope).base->functions.end())
+    if (operand->original(scope).base->functions.find(function_name) ==
+        operand->original(scope).base->functions.end())
         throw_exception("cannot find function \"", function_name, "\"");
 
     if (auto result =
-            variable->original(scope).base->functions[function_name].run(scope, arguments)) {
+            operand->original(scope).base->functions[function_name].run(scope, arguments)) {
         return *result;
     } else {
         return {};

@@ -130,8 +130,10 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 scope->statements.push_back(std::make_shared<While>(condtion, sub_scope));
 
             } else {
-                throw_exception("unrecognized token: \"", token->id, "\":\n",
-                                token->location(source));
+                putback();
+                scope->statements.push_back(std::make_shared<Expression>(build_expression(scope)));
+                // throw_exception("unrecognized token: \"", token->id, "\":\n",
+                //                 token->location(source));
             }
 
         } else if (auto token = match(TokenType::Semicolon)) {
@@ -216,6 +218,15 @@ void Parser::declare_struct(std::shared_ptr<Scope> scope) {
     std::unique_ptr<InternalObject> object = std::make_unique<InternalObject>(type_name.id);
     for (auto& var : definition->variables)
         object->members[var.first] = var.second;
+    for (auto& func : definition->functions)
+        object->functions[func.first] = func.second;
+
+    for (auto& func : object->functions) {
+        for (auto& var : object->members)
+            dynamic_cast<InternalFunction*>(func.second.base.get())->this_scope[var.first] =
+                &var.second;
+    }
+
     scope->types[type_name.id] = Object(std::move(object));
 }
 
@@ -319,8 +330,9 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 expression.operands.push_back(std::make_shared<FunctionCallOp>(
                     build_functioncall(scope, program->functions.find(token.id)->second)));
             } else {
-                throw_exception("\"", token.id, "\" is neither a function nor a variable:\n",
-                                token.location(source));
+                expression.operands.push_back(std::make_shared<VariableOp>(token.id));
+                // throw_exception("\"", token.id, "\" is neither a function nor a variable:\n",
+                //                 token.location(source));
             }
         } else {
             throw_exception("unrecognized operand \"", enum_to_string(token.type), "\":\n",

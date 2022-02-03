@@ -6,21 +6,30 @@ int main() {
     Program program;
 
     program.source = R"(
-        vectori create_vector(int size){
-            vectori list;
-            for(int i = 0; i < size; i++){
-                if(list.size() < 2)
-                    list.push_back(1);
-                else
-                    list.push_back(list[i - 2] + list[i - 1]);
+        struct vector{
+            void create(int size){
+                for(int i = 0; i < size; i++){
+                    if(base.size() < 2)
+                        base.push_back(1);
+                    else
+                        base.push_back(base[i - 2] + base[i - 1]);
+                }
             }
-            return list;
-        }
 
-        vectori list = create_vector(10);
+            void print(){
+                for(int i = 0; i < base.size(); i++)
+                    printi(base[i]);
+            }
 
-        for(int i = 0; i < list.size(); i++)
-            printi(list[i]);
+            vectori base;
+            int number = 0;
+        };
+
+        vector vec;
+        vec.create(10);
+        vec.print();
+
+        vectori list = vec.base;
     )";
 
     program.bind("printi", print<int>);

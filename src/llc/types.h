@@ -90,6 +90,7 @@ struct BaseObject {
     BaseObject(std::string type_name) : type_name_(type_name){};
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
+
     virtual void* ptr() const = 0;
     virtual void assign(const BaseObject* rhs) = 0;
     virtual void add(BaseObject* rhs) = 0;
@@ -462,9 +463,7 @@ struct ConcreteObject : BaseObject {
 struct InternalObject : BaseObject {
     using BaseObject::BaseObject;
 
-    BaseObject* clone() const override {
-        return new InternalObject(*this);
-    }
+    BaseObject* clone() const override;
 
     void* ptr() const override {
         throw_exception("cannot get pointer to internal type");
@@ -571,6 +570,7 @@ struct InternalFunction : BaseFunction {
 
     std::optional<Object> return_type;
     std::shared_ptr<Scope> definition;
+    std::map<std::string, Object*> this_scope;
     std::vector<std::string> parameters;
 };
 
@@ -708,7 +708,6 @@ struct Function {
         return base->run(scope, exprs);
     }
 
-    //   private:
     std::unique_ptr<BaseFunction> base;
 };
 
@@ -743,9 +742,14 @@ struct Operand {
                                       int index) = 0;
 
     virtual Object evaluate(const Scope& scope) const = 0;
+    virtual Object& original(const Scope&) const {
+        throw_exception("Operand::original is unimplmented for this class");
+        static Object null_object;
+        return null_object;
+    }
 
     virtual Object assign(const Scope&, const Object&) {
-        throw_exception("Operand::assign shall not be called");
+        throw_exception("Operand::assign is unimplmented for this class");
         return {};
     }
 
@@ -846,7 +850,7 @@ struct VariableOp : BaseOp {
         return scope.get_variable(name);
     }
 
-    Object& original(const Scope& scope) const {
+    Object& original(const Scope& scope) const override {
         LLC_CHECK(scope.find_variable(name).has_value());
         return scope.get_variable(name);
     }
@@ -892,19 +896,20 @@ struct MemberAccess : BinaryOp {
     }
 
     Object evaluate(const Scope& scope) const override {
-        auto variable = dynamic_cast<VariableOp*>(a.get());
         auto member = dynamic_cast<ObjectMember*>(b.get());
-        LLC_CHECK(variable != nullptr);
         LLC_CHECK(member != nullptr);
-        return variable->evaluate(scope)[member->name];
+        return a->evaluate(scope)[member->name];
+    }
+    Object& original(const Scope& scope) const override {
+        auto member = dynamic_cast<ObjectMember*>(b.get());
+        LLC_CHECK(member != nullptr);
+        return a->original(scope)[member->name];
     }
     Object assign(const Scope& scope, const Object& value) override {
-        auto variable = dynamic_cast<VariableOp*>(a.get());
         auto member = dynamic_cast<ObjectMember*>(b.get());
-        LLC_CHECK(variable != nullptr);
         LLC_CHECK(member != nullptr);
-        variable->original(scope)[member->name].assign(value);
-        return variable->evaluate(scope)[member->name];
+        a->original(scope)[member->name].assign(value);
+        return a->evaluate(scope)[member->name];
     }
 
     int get_precedence() const override {
