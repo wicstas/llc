@@ -41,7 +41,6 @@ int main() {
     compiler.compile(program);
     program.run();
 
-    // get variable from program
     try {
         //get a reference to a varaible defined inside program
         auto& list = program["list"].as<vectori&>();
