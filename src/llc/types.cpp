@@ -185,6 +185,17 @@ Object MemberFunctionCall::evaluate(const Scope& scope) const {
     }
 }
 
+Object TypeOp::evaluate(const Scope& scope) const  {
+    std::vector<Object> args;
+    for (const auto& arg : arguments) {
+        if (auto v = arg(scope))
+            args.push_back(*v);
+        else
+            throw_exception("argument to constructor must-not be \"void\"");
+    }
+    return Object::construct(type, args);
+}
+
 void Expression::apply_parenthese() {
     int highest_prec = 0;
     for (const auto& operand : operands)

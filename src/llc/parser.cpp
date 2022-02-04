@@ -213,7 +213,7 @@ void Parser::declare_struct(std::shared_ptr<Scope> scope) {
     must_match(TokenType::RightCurlyBracket);
     std::unique_ptr<InternalObject> object = std::make_unique<InternalObject>(type_name.id);
     definition->run(*scope);
-    
+
     for (auto& var : definition->variables)
         object->members[var.first] = var.second;
     for (auto& func : definition->functions)
@@ -321,9 +321,18 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                 depth--;
             }
         } else if (token.type == TokenType::Identifier) {
-            if (auto type = scope->find_type(token.id))
-                expression.operands.push_back(std::make_shared<TypeOp>(*type));
-            else if (prev.type == TokenType::Dot)
+            if (auto type = scope->find_type(token.id)) {
+                auto type_op = std::make_shared<TypeOp>(*type);
+                must_match(TokenType::LeftParenthese);
+
+                while (!match(TokenType::RightParenthese)) {
+                    type_op->arguments.emplace_back(build_expression(scope));
+                    if (must_match(TokenType::Comma | TokenType::RightParenthese).type ==
+                        TokenType::RightParenthese)
+                        break;
+                }
+                expression.operands.push_back(type_op);
+            } else if (prev.type == TokenType::Dot)
                 expression.operands.push_back(std::make_shared<ObjectMember>(token.id));
             else if (scope->find_variable(token.id))
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));

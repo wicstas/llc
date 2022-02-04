@@ -91,6 +91,8 @@ struct BaseObject {
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
 
+    virtual Object construct(const std::vector<Object>& objects) = 0;
+
     virtual void* ptr() const = 0;
     virtual void assign(const BaseObject* rhs) = 0;
     virtual void add(BaseObject* rhs) = 0;
@@ -174,6 +176,11 @@ struct BaseObject {
 };
 
 struct Object {
+    static Object construct(Object type, std::vector<Object> args) {
+        LLC_CHECK(type.base != nullptr);
+        return type.base->construct(args);
+    }
+
     Object() : base(nullptr){};
     explicit Object(std::unique_ptr<BaseObject> base) {
         LLC_CHECK(base != nullptr);
@@ -187,7 +194,6 @@ struct Object {
         if (rhs.base != nullptr)
             base.reset(rhs.base->clone());
     }
-
     Object& operator=(Object rhs) {
         std::swap(base, rhs.base);
         return *this;
@@ -306,8 +312,14 @@ struct Object {
         return lhs.base->not_equal(rhs.base.get());
     }
 
-    Object& operator[](std::string name) {
+    Object& operator[](std::string name) & {
         LLC_CHECK(base != nullptr);
+        return base->get_member(name);
+    }
+    Object& operator[](std::string name) && {
+        LLC_CHECK(base != nullptr);
+        throw_exception("cannot get member(which store a reference to part of that temporary "
+                        "object) of temporary object");
         return base->get_member(name);
     }
 
@@ -339,6 +351,16 @@ struct ConcreteObject : BaseObject {
     ConcreteObject(T value) : BaseObject(get_type_name<T>()), value(value){};
 
     virtual BaseObject* clone() const override;
+
+    Object construct(const std::vector<Object>& objects) override {
+        if (constructors.size() == 0)
+            throw_exception("no constructor was binded for type \"", type_name(), "\"");
+        for (const auto& ctor : constructors)
+            if (ctor->is_viable(objects))
+                return ctor->construct(objects);
+        throw_exception("no viable constructor found for type \"", type_name(), "\"");
+        return {};
+    }
 
     void* ptr() const override {
         return (void*)&value;
@@ -469,14 +491,56 @@ struct ConcreteObject : BaseObject {
         M T::*ptr;
     };
 
+    struct Constructor {
+        virtual ~Constructor() = default;
+        virtual Object construct(const std::vector<Object>& objects) const = 0;
+        virtual bool is_viable(const std::vector<Object>& objects) const = 0;
+    };
+
+    template <int index, typename... Args>
+    static bool objects_to_args(std::tuple<Args...>& args, const std::vector<Object>& objects) {
+        if (auto arg = objects[index].as_opt<std::tuple_element_t<index, std::tuple<Args...>>>())
+            std::get<index>(args) = *arg;
+        else
+            return false;
+
+        if constexpr (index != sizeof...(Args) - 1)
+            return objects_to_args<index + 1>(args, objects);
+        else
+            return true;
+    }
+
+    template <typename... Args>
+    struct ConcreteConstructor : Constructor {
+        Object construct(const std::vector<Object>& objects) const override {
+            LLC_CHECK(objects.size() == sizeof...(Args));
+            std::tuple<Args...> args;
+            objects_to_args<0>(args, objects);
+            return Object(std::make_from_tuple<T>(args));
+        }
+        bool is_viable(const std::vector<Object>& objects) const override {
+            if (objects.size() != sizeof...(Args))
+                return false;
+            std::tuple<Args...> args;
+            return objects_to_args<0>(args, objects);
+        }
+    };
+
     T value;
     std::map<std::string, std::shared_ptr<Accessor>> accessors;
+    std::vector<std::shared_ptr<Constructor>> constructors;
 };
 
 struct InternalObject : BaseObject {
     using BaseObject::BaseObject;
 
     BaseObject* clone() const override;
+
+    Object construct(const std::vector<Object>& objects) override {
+        LLC_CHECK(objects.size() == members.size());
+        throw_exception("internal object does not support constructor yet");
+        return {};
+    }
 
     void* ptr() const override {
         throw_exception("cannot get pointer to internal type");
@@ -606,7 +670,7 @@ struct ExternalFunction : BaseFunction {
 
 template <typename Return, typename... Args>
 struct ConcreteFunction : ExternalFunction {
-    using F = Return (*)(Args&&...);
+    using F = Return (*)(Args...);
     ConcreteFunction(F f) : f(f){};
 
     BaseFunction* clone() const override {
@@ -996,7 +1060,7 @@ struct MemberAccess : BinaryOp {
     Object evaluate(const Scope& scope) const override {
         auto member = dynamic_cast<ObjectMember*>(b.get());
         LLC_CHECK(member != nullptr);
-        return a->evaluate(scope)[member->name];
+        return a->original(scope)[member->name];
     }
     Object& original(const Scope& scope) const override {
         auto member = dynamic_cast<ObjectMember*>(b.get());
@@ -1007,7 +1071,7 @@ struct MemberAccess : BinaryOp {
         auto member = dynamic_cast<ObjectMember*>(b.get());
         LLC_CHECK(member != nullptr);
         a->original(scope)[member->name].assign(value);
-        return a->evaluate(scope)[member->name];
+        return a->original(scope)[member->name];
     }
 
     int get_precedence() const override {
@@ -1063,9 +1127,7 @@ struct ArrayAccess : BinaryOp {
 struct TypeOp : BaseOp {
     TypeOp(Object type) : type(type){};
 
-    Object evaluate(const Scope&) const override {
-        return type;
-    }
+    Object evaluate(const Scope& scope) const override;
 
     int get_precedence() const override {
         return precedence;
@@ -1073,8 +1135,10 @@ struct TypeOp : BaseOp {
     void set_precedence(int prec) override {
         precedence = prec;
     }
+
     int precedence = 8;
     Object type;
+    std::vector<Expression> arguments;
 };
 
 struct Assignment : BinaryOp {
@@ -1490,7 +1554,8 @@ struct Program {
             types[type_name] = Object(std::move(object));
         }
 
-        template <typename M, typename = typename std::enable_if_t<std::is_member_pointer_v<M>>>
+        template <typename M,
+                  typename = typename std::enable_if_t<!std::is_member_function_pointer_v<M T::*>>>
         TypeBindHelper& bind(std::string id, M T::*ptr) {
             using U = typename ConcreteObject<T>::template ConcreteAccessor<M>;
             object->accessors[id] = std::make_shared<U>(ptr);
@@ -1498,36 +1563,41 @@ struct Program {
         }
         template <typename F>
         TypeBindHelper& bind(std::string id, F&& func) {
-            return bind_func_impl(id, func);
+            bind_func_impl(id, func);
+            return *this;
         }
 
-        template <typename R = void, typename... Args>
-        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...)) {
-            object->functions[id] =
-                (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
-                    object.get(), (R(T::*)(Args...))func);
+        template <typename... Args>
+        TypeBindHelper& bind() {
+            using U = typename ConcreteObject<T>::template ConcreteConstructor<Args...>;
+            object->constructors.push_back(std::make_shared<U>());
             return *this;
         }
+
+      private:
         template <typename R = void, typename... Args>
-        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...) const) {
+        void bind_func_impl(std::string id, R (T::*func)(Args...)) {
             object->functions[id] =
                 (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
                     object.get(), (R(T::*)(Args...))func);
-            return *this;
         }
         template <typename R = void, typename... Args>
-        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...) &) {
+        void bind_func_impl(std::string id, R (T::*func)(Args...) const) {
             object->functions[id] =
                 (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
                     object.get(), (R(T::*)(Args...))func);
-            return *this;
         }
         template <typename R = void, typename... Args>
-        TypeBindHelper& bind_func_impl(std::string id, R (T::*func)(Args...) const&) {
+        void bind_func_impl(std::string id, R (T::*func)(Args...) &) {
             object->functions[id] =
                 (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
                     object.get(), (R(T::*)(Args...))func);
-            return *this;
+        }
+        template <typename R = void, typename... Args>
+        void bind_func_impl(std::string id, R (T::*func)(Args...) const&) {
+            object->functions[id] =
+                (Function)std::make_unique<ConcreteMemberFunction<T, R, Args...>>(
+                    object.get(), (R(T::*)(Args...))func);
         }
 
         std::string type_name;

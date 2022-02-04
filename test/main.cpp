@@ -53,8 +53,8 @@ void function_test() {
     }
 }
 
-void struct_test(){
-        try {
+void struct_test() {
+    try {
         Program program;
 
         program.source = R"(
@@ -81,7 +81,7 @@ void struct_test(){
         compiler.compile(program);
         program.run();
 
-        //call member function of struct defined inside program
+        // call member function of struct defined inside program
         print("x.set(32);");
         program["x"]["set"](32);
 
@@ -95,9 +95,50 @@ void struct_test(){
     }
 }
 
+void ctor_test() {
+    try {
+        Program program;
+
+        struct Vec3 {
+            Vec3() = default;
+            Vec3(std::string s) : x(std::stof(s)), y(std::stof(s)), z(std::stof(s)) {
+            }
+            Vec3(float v) : x(v), y(v), z(v) {
+            }
+            Vec3(float x, float y, float z) : x(x), y(y), z(z) {
+            }
+
+            float x, y, z;
+        };
+
+        program.source = R"(
+        printv( Vec3(1,2,3) );
+        printv( Vec3(4) );
+        printv( Vec3("5") );
+    )";
+
+        program.bind("printv", +[](Vec3 v) { print(v.x, ',', v.y, ',', v.z); });
+        program.bind<Vec3>("Vec3")
+            .bind<std::string>()
+            .bind<float>()
+            .bind<float, float, float>()
+            .bind("x", &Vec3::x)
+            .bind("y", &Vec3::y)
+            .bind("z", &Vec3::z);
+
+        Compiler compiler;
+        compiler.compile(program);
+        program.run();
+
+    } catch (const std::exception& exception) {
+        print(exception.what());
+    }
+}
+
 int main() {
-    function_test();
-    struct_test();
+    // function_test();
+    // struct_test();
+    ctor_test();
 
     return 0;
 }
