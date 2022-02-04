@@ -2,8 +2,7 @@
 ```c++
 #include <llc/compiler.h>
 
-void minimal_test() {
-
+int main() {
     llc::Program program;
     program.source = R"(
         prints("Hello World!");
