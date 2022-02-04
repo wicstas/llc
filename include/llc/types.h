@@ -39,9 +39,13 @@ enum class TokenType : uint64_t {
     String = 1ul << 23,
     LeftSquareBracket = 1ul << 24,
     RightSquareBracket = 1ul << 25,
-    Invalid = 1ul << 26,
-    Eof = 1ul << 27,
-    NumTokens = 1ul << 28
+    PlusEqual = 1ul << 26,
+    MinusEqual = 1ul << 27,
+    MultiplyEqual = 1ul << 28,
+    DivideEqual = 1ul << 29,
+    Invalid = 1ul << 30,
+    Eof = 1ul << 31,
+    NumTokens = 1ul << 32
 };
 
 inline TokenType operator|(TokenType a, TokenType b) {
@@ -1244,6 +1248,62 @@ struct Division : BinaryOp {
         precedence = prec;
     }
     int precedence = 5;
+};
+
+struct AddEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return a->original(scope) += b->evaluate(scope);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 3;
+};
+
+struct SubtractEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return a->original(scope) -= b->evaluate(scope);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 3;
+};
+
+struct MultiplyEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return a->original(scope) *= b->evaluate(scope);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 3;
+};
+
+struct DivideEqual : BinaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return a->original(scope) /= b->evaluate(scope);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+    int precedence = 3;
 };
 
 struct PostIncrement : PostUnaryOp {

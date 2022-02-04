@@ -43,34 +43,57 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
         Token token;
         switch (c) {
         case EOF: token.type = TokenType::Eof; break;
-        case '+':
-            if (next() == '+') {
+        case '+': {
+            char c = next();
+            if (c == '+')
                 token.type = TokenType::Increment;
-            } else {
+            else if (c == '=')
+                token.type = TokenType::PlusEqual;
+            else {
                 token.type = TokenType::Plus;
                 putback();
             }
             break;
-        case '-':
-            if (next() == '-') {
+        }
+        case '-': {
+            char c = next();
+            if (c == '-')
                 token.type = TokenType::Decrement;
-            } else {
+            else if (c == '=')
+                token.type = TokenType::MinusEqual;
+            else {
                 token.type = TokenType::Minus;
                 putback();
             }
             break;
-        case '*': token.type = TokenType::Star; break;
-        case '/':
+        }
+        case '*': {
+            char c = next();
+            if (c == '=')
+                token.type = TokenType::MultiplyEqual;
+            else {
+                token.type = TokenType::Star;
+                putback();
+            }
+            break;
+        }
+        case '/': {
             if (next() == '/') {
                 comment = true;
                 while (!is_newline(next())) {
                 }
                 putback();
             } else {
-                token.type = TokenType::ForwardSlash;
                 putback();
+                if (next() == '=')
+                    token.type = TokenType::DivideEqual;
+                else {
+                    token.type = TokenType::ForwardSlash;
+                    putback();
+                }
             }
             break;
+        }
         case '(': token.type = TokenType::LeftParenthese; break;
         case ')': token.type = TokenType::RightParenthese; break;
         case '[': token.type = TokenType::LeftSquareBracket; break;

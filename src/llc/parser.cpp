@@ -292,6 +292,14 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             expression.operands.push_back(std::make_shared<Multiplication>());
         else if (token.type == TokenType::ForwardSlash)
             expression.operands.push_back(std::make_shared<Division>());
+        else if (token.type == TokenType::PlusEqual)
+            expression.operands.push_back(std::make_shared<AddEqual>());
+        else if (token.type == TokenType::MinusEqual)
+            expression.operands.push_back(std::make_shared<SubtractEqual>());
+        else if (token.type == TokenType::MultiplyEqual)
+            expression.operands.push_back(std::make_shared<MultiplyEqual>());
+        else if (token.type == TokenType::DivideEqual)
+            expression.operands.push_back(std::make_shared<DivideEqual>());
         else if (token.type == TokenType::LeftSquareBracket) {
             expression.operands.push_back(std::make_shared<ArrayAccess>());
             expression.operands.push_back(std::make_shared<LeftSquareBracket>());

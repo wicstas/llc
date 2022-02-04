@@ -38,10 +38,10 @@ std::string Location::operator()(const std::string& source) const {
 }
 
 std::string enum_to_string(TokenType type) {
-    static const char* map[] = {"number", "++", "--",      "+",   "-",          "*", "/", "(",
-                                ")",      "{",  "}",       ";",   "identifier", ".", ",", "<",
-                                "<=",     ">",  ">=",      "==",  "!=",         "=", "!", "string",
-                                "[",      "]",  "invalid", "eof", "num_tokens"};
+    static const char* map[] = {
+        "number", "++",         "--", "+", "-",  "*",  "/",  "(",  ")",       "{",   "}",
+        ";",      "identifier", ".",  ",", "<",  "<=", ">",  ">=", "==",      "!=",  "=",
+        "!",      "string",     "[",  "]", "+=", "-=", "*=", "/=", "invalid", "eof", "num_tokens"};
     std::string str;
     for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
         if ((uint64_t(type) >> i) & 1ul)

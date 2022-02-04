@@ -7,7 +7,8 @@ void minimal_test() {
     program.source = R"(
         prints("Hello World!");
     )";
-    program.bind("prints", +[](std::string s) { std::cout << s << std::endl; });
+    program.bind(
+        "prints", +[](std::string s) { std::cout << s << std::endl; });
 
     Compiler compiler;
     compiler.compile(program);
@@ -20,7 +21,7 @@ void function_test() {
 
         program.source = R"(
         int fibonacci_impl(int a, int b, int n){
-            if(n == 0)
+            if(n <= 0)
                 return a;
             else
                  return fibonacci_impl(b, a + b, n - 1);
@@ -176,17 +177,35 @@ void dynamic_alloc_test() {
         program.source = R"(
         vector v = vector(1, new int);
         v[0] = 10;
-        printi(v[0]);
-        v[1] = 20;
-        printi(v[1]);
+        printsi("v[0] = ",v[0]);
     )";
 
-        program.bind("printi", print<int>);
+        program.bind("printsi", print<std::string, int>);
         program.bind<vector>("vector").bind<int, int*>();
 
         Compiler compiler;
         compiler.compile(program);
         program.run();
+
+    } catch (const std::exception& exception) {
+        print(exception.what());
+    }
+}
+
+void test() {
+    try {
+        Program program;
+
+        program.source = R"(
+        int i = 5;
+        i += 5;
+        )";
+
+        Compiler compiler;
+        compiler.compile(program);
+        program.run();
+
+        print("5 + 5 = ",program["i"].as<int>());
 
     } catch (const std::exception& exception) {
         print(exception.what());
@@ -199,6 +218,7 @@ int main() {
     struct_test();
     ctor_test();
     dynamic_alloc_test();
+    test();
 
     return 0;
 }

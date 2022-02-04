@@ -45,7 +45,7 @@ int main() {
 
         program.source = R"(
         int fibonacci_impl(int a, int b, int n){
-            if(n == 0)
+            if(n <= 0)
                 return a;
             else
                  return fibonacci_impl(b, a + b, n - 1);
