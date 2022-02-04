@@ -1,5 +1,3 @@
-# llc, a tiny c++ interpreter
-
 ## Minimal example:
 ```c++
 #include <llc/compiler.h>
