@@ -82,13 +82,13 @@ void struct_test() {
         program.run();
 
         // call member function of struct defined inside program
-        print("x.set(32);");
+        // x = 32
         program["x"]["set"](32);
 
-        print("x.add(x.get());");
+        // x = x + x;
         program["x"]["add"](program["x"]["get"]().as<int>());
 
-        print("x.get(): ", program["x"]["get"]().as<int>());
+        print("x = ", program["x"]["get"]().as<int>());
 
     } catch (const std::exception& exception) {
         print(exception.what());
@@ -146,14 +146,12 @@ void dynamic_alloc_test() {
 
             int& operator[](int i) {
                 if (i >= n)
-                    throw_exception("vector access out of range(range: [0, ", n, "), index: ", i,
-                                    ")");
+                    throw_exception("index out of range(range: [0, ", n, "), index: ", i, ")");
                 return ptr[i];
             }
             const int& operator[](int i) const {
                 if (i >= n)
-                    throw_exception("vector access out of range(range: [0, ", n, "), index: ", i,
-                                    ")");
+                    throw_exception("index out of range(range: [0, ", n, "), index: ", i, ")");
                 return ptr[i];
             }
 
@@ -182,9 +180,9 @@ void dynamic_alloc_test() {
 }
 
 int main() {
-    // function_test();
-    // struct_test();
-    // ctor_test();
+    function_test();
+    struct_test();
+    ctor_test();
     dynamic_alloc_test();
 
     return 0;
