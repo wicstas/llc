@@ -7,6 +7,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
 
 include_directories(
     ./src
+    ./include
 )
 
 add_library(llc
@@ -19,4 +20,4 @@ src/llc/parser.cpp
 add_executable(llc_test 
 test/main.cpp
 )
-target_link_libraries(llc_test PRIVATE llc)
+target_link_libraries(llc_test llc)

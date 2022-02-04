@@ -2,6 +2,18 @@
 
 using namespace llc;
 
+void minimal_test() {
+    Program program;
+    program.source = R"(
+        prints("Hello World!");
+    )";
+    program.bind("prints", +[](std::string s) { std::cout << s << std::endl; });
+
+    Compiler compiler;
+    compiler.compile(program);
+    program.run();
+}
+
 void function_test() {
     try {
         Program program;
@@ -38,7 +50,7 @@ void function_test() {
         compiler.compile(program);
         program.run();
 
-        // get reference to varaible defined inside program
+        // get reference to variable defined inside program
         auto& list = program["list"].as<vectori&>();
 
         // run function defined inside program
@@ -74,12 +86,14 @@ void struct_test() {
         };
 
         Number x;
-        x.number = 10;
+        x.set(10);
     )";
 
         Compiler compiler;
         compiler.compile(program);
         program.run();
+
+        print("x = ", program["x"]["get"]().as<int>());
 
         // call member function of struct defined inside program
         // x = 32
@@ -180,6 +194,7 @@ void dynamic_alloc_test() {
 }
 
 int main() {
+    minimal_test();
     function_test();
     struct_test();
     ctor_test();
