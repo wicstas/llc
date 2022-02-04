@@ -20,7 +20,7 @@ void minimal_test() {
 
 ## Quick Start
 1. configure `CMakeLists.txt`  
-```
+```cmake
 add_subdirectory(path_to_llc_repo)
 
 target_include_directories(project_name path_to_llc_repo/include)
@@ -28,7 +28,7 @@ target_include_directories(project_name path_to_llc_repo/include)
 target_link_libraries(project_name llc)
 ```
 
-2. include *llc* header, all *llc* classes/functions are inside namespace `llc`  
+2. include *llc* header, all *llc* classes/functions are inside namespace `llc`
 ```cpp
 #include <llc/compiler.h>
 ```

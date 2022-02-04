@@ -20,7 +20,7 @@ void minimal_test() {
 
 ## Quick Start
 1. configure `CMakeLists.txt`  
-```
+```cmake
 add_subdirectory(path_to_llc_repo)
 
 target_include_directories(project_name path_to_llc_repo/include)
