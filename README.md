@@ -29,7 +29,7 @@ target_link_libraries(project_name llc)
 ```
 
 2. include *llc* header, all *llc* classes/functions are inside namespace `llc`
-```
+```c++
 #include <llc/compiler.h>
 ```
 
