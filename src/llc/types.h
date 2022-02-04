@@ -87,9 +87,11 @@ struct BaseFunction {
 };
 
 struct BaseObject {
+    BaseObject() = default;
     BaseObject(std::string type_name) : type_name_(type_name){};
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
+    virtual BaseObject* alloc() const = 0;
 
     virtual Object construct(const std::vector<Object>& objects) = 0;
 
@@ -171,7 +173,6 @@ struct BaseObject {
     mutable std::map<std::string, Object> members;
     mutable std::map<std::string, Function> functions;
 
-  private:
     std::string type_name_;
 };
 
@@ -197,6 +198,10 @@ struct Object {
     Object& operator=(Object rhs) {
         std::swap(base, rhs.base);
         return *this;
+    }
+
+    Object alloc() const {
+        return Object(std::unique_ptr<BaseObject>(base->alloc()));
     }
 
     void assign(const Object& rhs) {
@@ -348,9 +353,20 @@ struct Object {
 
 template <typename T>
 struct ConcreteObject : BaseObject {
+    ConcreteObject() = default;
     ConcreteObject(T value) : BaseObject(get_type_name<T>()), value(value){};
 
-    virtual BaseObject* clone() const override;
+    BaseObject* clone() const override;
+    BaseObject* alloc() const override {
+        using Ty = std::decay_t<T>;
+        if constexpr (!std::is_pointer<T>::value) {
+            type_id_to_name[typeid(Ty*).hash_code()] = get_type_name<Ty>() + "*";
+            return new ConcreteObject<Ty*>(new Ty(value));
+        } else {
+            throw_exception("only one level of indirection is supported");
+            return nullptr;
+        }
+    }
 
     Object construct(const std::vector<Object>& objects) override {
         if (constructors.size() == 0)
@@ -381,7 +397,7 @@ struct ConcreteObject : BaseObject {
             throw_exception("type \"", type_name(), "\" does not have operator \"+\"");
     }
     void sub(BaseObject* rhs) override {
-        if constexpr (HasOperatorSub<T>::value)
+        if constexpr (HasOperatorSub<T>::value && !std::is_pointer<T>::value)
             value -= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"-\"");
@@ -460,11 +476,11 @@ struct ConcreteObject : BaseObject {
         return {};
     }
     Object get_element(size_t index) const override {
-        if constexpr (HasOperatorArrayAccess<T>::value)
+        if constexpr (HasOperatorArrayAccess<const T>::value)
             return (Object)std::make_unique<ConcreteObject<std::decay_t<decltype(value[index])>>>(
                 value[index]);
         else
-            throw_exception("type \"", type_name(), "\" does not have operator \"[]\"");
+            throw_exception("type \"", type_name(), "\" does not have operator \"[]\" const");
         return {};
     }
     void set_element(size_t index, Object object) override {
@@ -535,6 +551,10 @@ struct InternalObject : BaseObject {
     using BaseObject::BaseObject;
 
     BaseObject* clone() const override;
+    BaseObject* alloc() const override {
+        throw_exception("internal object does not support \"new\"");
+        return nullptr;
+    }
 
     Object construct(const std::vector<Object>& objects) override {
         LLC_CHECK(objects.size() == members.size());
@@ -1139,6 +1159,21 @@ struct TypeOp : BaseOp {
     int precedence = 8;
     Object type;
     std::vector<Expression> arguments;
+};
+
+struct NewOp : PreUnaryOp {
+    Object evaluate(const Scope& scope) const override {
+        return operand->evaluate(scope).alloc();
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+
+    int precedence = 8;
 };
 
 struct Assignment : BinaryOp {

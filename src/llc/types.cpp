@@ -185,7 +185,7 @@ Object MemberFunctionCall::evaluate(const Scope& scope) const {
     }
 }
 
-Object TypeOp::evaluate(const Scope& scope) const  {
+Object TypeOp::evaluate(const Scope& scope) const {
     std::vector<Object> args;
     for (const auto& arg : arguments) {
         if (auto v = arg(scope))
@@ -193,7 +193,10 @@ Object TypeOp::evaluate(const Scope& scope) const  {
         else
             throw_exception("argument to constructor must-not be \"void\"");
     }
-    return Object::construct(type, args);
+    if (args.size())
+        return Object::construct(type, args);
+    else
+        return type;
 }
 
 void Expression::apply_parenthese() {

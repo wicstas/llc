@@ -169,6 +169,11 @@ struct TypePack<T, Ts...> : TypePack<Ts...> {
     }
 };
 
+template <bool val, typename T>
+struct deferred_bool {
+    static constexpr bool value = val;
+};
+
 template <typename... Args, typename T, typename R>
 auto overload_cast(R (T::*func)(Args...)) {
     return func;
