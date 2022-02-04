@@ -1663,7 +1663,7 @@ struct Program {
         }
 
         template <typename... Args>
-        TypeBindHelper& bind() {
+        TypeBindHelper& ctor() {
             using U = typename ConcreteObject<T>::template ConcreteConstructor<Args...>;
             object->constructors.push_back(std::make_shared<U>());
             return *this;

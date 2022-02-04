@@ -135,9 +135,9 @@ void ctor_test() {
         program.bind(
             "printv", +[](Vec3 v) { print(v.x, ',', v.y, ',', v.z); });
         program.bind<Vec3>("Vec3")
-            .bind<std::string>()
-            .bind<float>()
-            .bind<float, float, float>()
+            .ctor<std::string>()
+            .ctor<float>()
+            .ctor<float, float, float>()
             .bind("x", &Vec3::x)
             .bind("y", &Vec3::y)
             .bind("z", &Vec3::z);
@@ -181,7 +181,7 @@ void dynamic_alloc_test() {
     )";
 
         program.bind("printsi", print<std::string, int>);
-        program.bind<vector>("vector").bind<int, int*>();
+        program.bind<vector>("vector").ctor<int, int*>();
 
         Compiler compiler;
         compiler.compile(program);

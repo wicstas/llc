@@ -171,9 +171,9 @@ int main() {
         program.bind(
             "printv", +[](Vec3 v) { print(v.x, ',', v.y, ',', v.z); });
         program.bind<Vec3>("Vec3")
-            .bind<std::string>()
-            .bind<float>()
-            .bind<float, float, float>()
+            .ctor<std::string>()
+            .ctor<float>()
+            .ctor<float, float, float>()
             .bind("x", &Vec3::x)
             .bind("y", &Vec3::y)
             .bind("z", &Vec3::z);
