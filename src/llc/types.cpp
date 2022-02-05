@@ -5,17 +5,12 @@
 namespace llc {
 
 std::map<size_t, std::string> type_id_to_name = {
-    {typeid(int).hash_code(), "int"},
-    {typeid(uint8_t).hash_code(), "uint8_t"},
-    {typeid(uint16_t).hash_code(), "uint16_t"},
-    {typeid(uint32_t).hash_code(), "uint32_t"},
-    {typeid(uint64_t).hash_code(), "uint64_t"},
-    {typeid(int8_t).hash_code(), "int8_t"},
-    {typeid(int16_t).hash_code(), "int16_t"},
-    {typeid(int64_t).hash_code(), "int64_t"},
-    {typeid(float).hash_code(), "float"},
-    {typeid(double).hash_code(), "double"},
-    {typeid(std::string).hash_code(), "string"},
+    {typeid(int).hash_code(), "int"},           {typeid(char).hash_code(), "char"},
+    {typeid(uint8_t).hash_code(), "uint8_t"},   {typeid(uint16_t).hash_code(), "uint16_t"},
+    {typeid(uint32_t).hash_code(), "uint32_t"}, {typeid(uint64_t).hash_code(), "uint64_t"},
+    {typeid(int8_t).hash_code(), "int8_t"},     {typeid(int16_t).hash_code(), "int16_t"},
+    {typeid(int64_t).hash_code(), "int64_t"},   {typeid(float).hash_code(), "float"},
+    {typeid(double).hash_code(), "double"},     {typeid(std::string).hash_code(), "string"},
     {typeid(bool).hash_code(), "bool"},
 };
 
@@ -25,16 +20,16 @@ std::string Location::operator()(const std::string& source) const {
     LLC_CHECK(length > 0);
     std::vector<std::string> lines = separate_lines(source);
 
-    std::string pos = std::to_string(line) + ':' + std::to_string(column) + ':';
+    std::string location = std::to_string(line) + ':' + std::to_string(column) + ':';
+    if (filepath != "")
+        location = filepath + ':' + location;
     std::string raw = lines[line];
     std::string underline(raw.size(), ' ');
     for (int i = 0; i < length; i++) {
         LLC_CHECK(column + i < (int)underline.size());
         underline[column + i] = '~';
     }
-    raw = pos + raw;
-    underline = std::string(pos.size(), ' ') + underline;
-    return raw + '\n' + underline;
+    return location + '\n' + raw + '\n' + underline;
 }
 
 std::string enum_to_string(TokenType type) {
@@ -60,6 +55,7 @@ Object& BaseObject::get_member(std::string name) {
 
 Scope::Scope() {
     types["int"] = Object(int(0));
+    types["char"] = Object(char(0));
     types["uint8_t"] = Object(uint8_t(0));
     types["uint16_t"] = Object(uint16_t(0));
     types["uint32_t"] = Object(uint32_t(0));
@@ -273,7 +269,8 @@ std::optional<Object> IfElseChain::run(const Scope& scope) const {
 std::optional<Object> For::run(const Scope& scope) const {
     LLC_CHECK(action != nullptr);
 
-    for (; condition(*internal_scope)->as<bool>(); updation(*internal_scope)->as<bool>()) {
+    for (initialization(*internal_scope); condition(*internal_scope)->as<bool>();
+         updation(*internal_scope)->as<bool>()) {
         action->run(scope);
     }
 

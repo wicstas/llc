@@ -33,7 +33,8 @@ std::string to_string(const T& first, const Args&... args) {
 
 struct Location {
     Location() = default;
-    Location(int line, int column, int length) : line(line), column(column), length(length){};
+    Location(int line, int column, int length, std::string filepath = {})
+        : line(line), column(column), length(length), filepath(filepath){};
 
     std::string operator()(const std::string& source) const;
 
@@ -45,6 +46,7 @@ struct Location {
     int line = -1;
     int column = -1;
     int length = -1;
+    std::string filepath;
 };
 
 struct Exception : std::exception {

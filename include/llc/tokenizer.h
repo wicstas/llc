@@ -7,7 +7,7 @@
 namespace llc {
 
 struct Tokenizer {
-    std::vector<Token> tokenize(const std::string& source);
+    std::vector<Token> tokenize(const Program& program);
 
   private:
     char next();

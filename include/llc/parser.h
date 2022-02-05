@@ -14,22 +14,19 @@ struct Parser {
     Parser(const Parser&) = delete;
     Parser& operator=(const Parser&) = delete;
 
-    void parse(std::string source, std::vector<Token> tokens, Program* program) {
-        this->source = source;
-        this->tokens = tokens;
-        this->program = program;
+    void parse(Program& program, std::vector<Token> tokens) {
+        this->source = program.source;
+        this->tokens = std::move(tokens);
         this->pos = 0;
 
-        LLC_CHECK(program != nullptr);
-
-        std::shared_ptr<Scope> scope = std::make_shared<Scope>();
-        for (const auto& type : program->types)
-            scope->types[type.first] = type.second;
-        for (const auto& function : program->functions)
-            scope->functions[function.first] = function.second;
-
-        parse_recursively(scope);
-        program->scope = scope;
+        program.scope = std::make_shared<Scope>();
+        for (const auto& type : program.types)
+            program.scope->types[type.first] = type.second;
+        for (const auto& var : program.variables)
+            program.scope->variables[var.first] = var.second;
+        for (const auto& function : program.functions)
+            program.scope->functions[function.first] = function.second;
+        parse_recursively(program.scope);
     }
 
   private:
@@ -75,7 +72,6 @@ struct Parser {
     std::string source;
     std::vector<Token> tokens;
     size_t pos;
-    Program* program = nullptr;
 };
 
 }  // namespace llc

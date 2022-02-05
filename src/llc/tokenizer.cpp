@@ -28,14 +28,14 @@ void Tokenizer::putback() {
     text--;
 }
 
-std::vector<Token> Tokenizer::tokenize(const std::string& source) {
+std::vector<Token> Tokenizer::tokenize(const Program& program) {
     std::vector<Token> tokens;
-    text = source.c_str();
+    text = program.source.c_str();
     line = 0;
     column = 0;
     current_char_offset = 0;
     int start_offset = 0;
-    source_char_count = (int)source.size();
+    source_char_count = (int)program.source.size();
     bool comment = false;
 
     skip(text);
@@ -167,7 +167,7 @@ std::vector<Token> Tokenizer::tokenize(const std::string& source) {
 
         if (!comment) {
             int length = current_char_offset - start_offset;
-            token.location = Location(line, column - length, length);
+            token.location = Location(line, column - length, length, program.filepath);
             tokens.push_back(token);
         }
         comment = false;

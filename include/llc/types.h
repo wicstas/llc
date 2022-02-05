@@ -73,10 +73,11 @@ extern std::map<size_t, std::string> type_id_to_name;
 
 template <typename T>
 std::string get_type_name() {
-    auto it = type_id_to_name.find(typeid(T).hash_code());
+    using Ty = std::decay_t<T>;
+    auto it = type_id_to_name.find(typeid(Ty).hash_code());
     if (it == type_id_to_name.end())
         throw_exception("cannot get name of unregistered type T, typeid(T).name(): \"",
-                        typeid(T).name(), "\"");
+                        typeid(Ty).name(), "\"");
     return it->second;
 }
 
@@ -408,13 +409,13 @@ struct ConcreteObject : BaseObject {
     }
     void mul(BaseObject* rhs) override {
         if constexpr (HasOperatorMul<T>::value)
-            value -= rhs->as<T>();
+            value *= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"*\"");
     }
     void div(BaseObject* rhs) override {
         if constexpr (HasOperatorDiv<T>::value)
-            value -= rhs->as<T>();
+            value /= rhs->as<T>();
         else
             throw_exception("type \"", type_name(), "\" does not have operator \"/\"");
     }
@@ -1608,16 +1609,17 @@ struct IfElseChain : Statement {
 };
 
 struct For : Statement {
-    For(Expression condition, Expression updation, std::shared_ptr<Scope> internal_scope,
-        std::shared_ptr<Scope> action)
-        : condition(condition),
+    For(Expression initialization, Expression condition, Expression updation,
+        std::shared_ptr<Scope> internal_scope, std::shared_ptr<Scope> action)
+        : initialization(initialization),
+          condition(condition),
           updation(updation),
           internal_scope(internal_scope),
           action(action){};
 
     std::optional<Object> run(const Scope& scope) const override;
 
-    Expression condition, updation;
+    Expression initialization, condition, updation;
     std::shared_ptr<Scope> internal_scope, action;
 };
 
@@ -1635,6 +1637,14 @@ struct Program {
     template <typename Return, typename... Args>
     void bind(std::string name, Return (*func)(Args...)) {
         functions[name] = (Function)std::make_unique<ConcreteFunction<Return, Args...>>(func);
+    }
+    template <typename T, typename = typename std::enable_if_t<!std::is_function_v<T>>>
+    void bind(std::string name, const T& var) {
+        using Ty = std::decay_t<T>;
+        if constexpr (std::is_pointer_v<Ty>)
+            type_id_to_name[typeid(Ty).hash_code()] =
+                get_type_name<decltype(*(std::declval<Ty>()))>() + "*";
+        variables[name] = Object(Ty(var));
     }
 
     template <typename T>
@@ -1700,9 +1710,13 @@ struct Program {
         std::map<std::string, Object>& types;
     };
 
-    template <typename T>
+    template <typename T, typename = typename std::enable_if_t<!std::is_pointer_v<T>>>
     TypeBindHelper<T> bind(std::string name) {
         return TypeBindHelper<T>(name, types);
+    }
+    template <typename T, typename = typename std::enable_if_t<std::is_pointer_v<T>>>
+    void bind(std::string name) {
+        type_id_to_name[typeid(T).hash_code()] = name;
     }
 
     void run() {
@@ -1802,11 +1816,13 @@ struct Program {
     }
 
     std::string source;
+    std::string filepath;
 
   private:
     std::shared_ptr<Scope> scope;
     std::map<std::string, Function> functions;
     std::map<std::string, Object> types;
+    std::map<std::string, Object> variables;
 
     friend struct Compiler;
     friend struct Parser;

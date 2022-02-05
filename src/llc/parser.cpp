@@ -92,7 +92,19 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 auto for_scope = std::make_shared<Scope>();
                 for_scope->parent = scope;
                 must_match(TokenType::LeftParenthese);
-                declare_variable(for_scope);
+
+                if (auto type_token = match(TokenType::Identifier)) {
+                    auto type = must_has(for_scope->find_type(type_token->id), *type_token);
+                    auto var_token = must_match(TokenType::Identifier);
+                    auto var = for_scope->variables[var_token.id] = *type;
+                }
+
+                Expression initialization;
+                if (match(TokenType::Assign)) {
+                    putback();
+                    putback();
+                    initialization = build_expression(for_scope);
+                }
                 must_match(TokenType::Semicolon);
                 Expression condtion = build_expression(for_scope);
                 must_match(TokenType::Semicolon);
@@ -106,8 +118,8 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
                 } else {
                     sub_scope = parse_recursively_topdown(for_scope, true);
                 }
-                scope->statements.push_back(
-                    std::make_shared<For>(condtion, updation, for_scope, sub_scope));
+                scope->statements.push_back(std::make_shared<For>(initialization, condtion,
+                                                                  updation, for_scope, sub_scope));
 
             } else if (token->id == "while") {
                 must_match(TokenType::LeftParenthese);

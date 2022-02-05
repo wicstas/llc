@@ -1,4 +1,5 @@
 #include <llc/compiler.h>
+#include <fstream>
 
 using namespace llc;
 
@@ -192,20 +193,58 @@ void dynamic_alloc_test() {
     }
 }
 
-void test() {
+void mandelbrot_test() {
     try {
         Program program;
 
+        std::string symbols[] = {" ", ".", ":", ";", "x", "%", "#", "@"};
+        int n_symbols = sizeof(symbols) / sizeof(symbols[0]);
+        program.bind<std::string>("string");
+        program.bind("symbols", symbols);
+        program.bind("n_symbols", n_symbols);
+        program.bind("new_line", std::string("\n"));
+        program.bind("prints", print<std::string>);
+        program.bind(
+            "put", +[](std::string c) { std::cout << c << std::flush; });
+
         program.source = R"(
-        int i = 5;
-        i += 5;
+            string pixels = "";
+
+            int c = 0; 
+
+            put("rendering:");
+            for(float i = 0; i < 40; i++){
+                for(float j = 0; j < 80; j++){
+                    float cx = j / (80.0f / 3.0f) - 1.5f;
+                    float cy = i / (40.0f / 3.0f) - 1.5f;
+                    float zx = 0.0f;
+                    float zy = 0.0f;
+
+                    int iter = 0;
+                    for(int n = 0; n < 40; n++){
+                        float nx = zx * zx - zy * zy + cx;
+                        float ny = 2.0f * zx * zy + cy;
+                        zx = nx;
+                        zy = ny;
+                        if(zx * zx + zy * zy > 4.0f)
+                            n = 1000;
+                        iter++;
+                    }
+
+                    int k = n_symbols * iter / 41.0f;
+                    pixels += symbols[k];
+                }
+                pixels += new_line;
+                put("+");
+            }
+
+            prints(pixels);
+
         )";
 
         Compiler compiler;
         compiler.compile(program);
         program.run();
-
-        print("5 + 5 = ",program["i"].as<int>());
 
     } catch (const std::exception& exception) {
         print(exception.what());
@@ -213,12 +252,12 @@ void test() {
 }
 
 int main() {
-    minimal_test();
-    function_test();
-    struct_test();
-    ctor_test();
-    dynamic_alloc_test();
-    test();
+    // minimal_test();
+    // function_test();
+    // struct_test();
+    // ctor_test();
+    // dynamic_alloc_test();
+    mandelbrot_test();
 
     return 0;
 }
