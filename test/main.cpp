@@ -252,11 +252,11 @@ void mandelbrot_test() {
 }
 
 int main() {
-    // minimal_test();
-    // function_test();
-    // struct_test();
-    // ctor_test();
-    // dynamic_alloc_test();
+    minimal_test();
+    function_test();
+    struct_test();
+    ctor_test();
+    dynamic_alloc_test();
     mandelbrot_test();
 
     return 0;
