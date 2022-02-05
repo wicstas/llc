@@ -196,9 +196,7 @@ void dynamic_alloc_test() {
 void mandelbrot_test() {
     try {
         Program program;
-        program.bind<std::string>("string")
-            .bind("push_back", &std::string::push_back)
-            .bind("size", &std::string::size);
+        program.bind<std::string>("string").bind("size", &std::string::size);
         program.bind("newline", std::string("\n"));
 
         program.bind("prints", print<std::string>);
