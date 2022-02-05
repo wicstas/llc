@@ -196,18 +196,16 @@ void dynamic_alloc_test() {
 void mandelbrot_test() {
     try {
         Program program;
+        program.bind<std::string>("string")
+            .bind("push_back", &std::string::push_back)
+            .bind("size", &std::string::size);
+        program.bind("newline", std::string("\n"));
 
-        std::string symbols[] = {" ", ".", ":", ";", "x", "%", "#", "@"};
-        int n_symbols = sizeof(symbols) / sizeof(symbols[0]);
-        program.bind<std::string>("string");
-        program.bind("symbols", symbols);
-        program.bind("n_symbols", n_symbols);
-        program.bind("new_line", std::string("\n"));
         program.bind("prints", print<std::string>);
-        program.bind(
-            "put", +[](std::string c) { std::cout << c << std::flush; });
+        program.bind("put", +[](std::string c) { std::cout << c << std::flush; });
 
         program.source = R"(
+            string symbols = " .:;x%#@";
             string pixels = "";
 
             int c = 0; 
@@ -231,10 +229,12 @@ void mandelbrot_test() {
                         iter++;
                     }
 
-                    int k = n_symbols * iter / 41.0f;
-                    pixels += symbols[k];
+                    int k = symbols.size() * iter / 41.0f;
+                    string pixel = " ";
+                    pixel[0] = symbols[k];
+                    pixels += pixel;
                 }
-                pixels += new_line;
+                pixels += newline;
                 put("+");
             }
 
