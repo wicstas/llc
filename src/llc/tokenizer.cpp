@@ -1,5 +1,7 @@
 #include <llc/tokenizer.h>
 
+#include <algorithm>
+
 namespace llc {
 
 static inline bool is_digit(char c) {
@@ -28,6 +30,9 @@ void Tokenizer::putback() {
     text--;
 }
 
+static const std::map<char, char> escape_char_map = {
+    {'n', '\n'}, {'t', '\r'}, {'r', '\r'}, {'b', '\b'}, {'v', '\v'}, {'f', '\f'}, {'a', '\a'}};
+
 std::vector<Token> Tokenizer::tokenize(const Program& program) {
     std::vector<Token> tokens;
     text = program.source.c_str();
@@ -44,7 +49,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
         switch (c) {
         case EOF: token.type = TokenType::Eof; break;
         case '+': {
-            char c = next();
+            c = next();
             if (c == '+')
                 token.type = TokenType::Increment;
             else if (c == '=')
@@ -55,8 +60,9 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
             }
             break;
         }
+
         case '-': {
-            char c = next();
+            c = next();
             if (c == '-')
                 token.type = TokenType::Decrement;
             else if (c == '=')
@@ -67,6 +73,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
             }
             break;
         }
+
         case '*': {
             char c = next();
             if (c == '=')
@@ -77,6 +84,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
             }
             break;
         }
+
         case '/': {
             if (next() == '/') {
                 comment = true;
@@ -94,6 +102,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
             }
             break;
         }
+
         case '(': token.type = TokenType::LeftParenthese; break;
         case ')': token.type = TokenType::RightParenthese; break;
         case '[': token.type = TokenType::LeftSquareBracket; break;
@@ -103,7 +112,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
         case ';': token.type = TokenType::Semicolon; break;
         case '.': token.type = TokenType::Dot; break;
         case ',': token.type = TokenType::Comma; break;
-        case '<':
+        case '<': {
             if (next() == '=') {
                 token.type = TokenType::LessEqual;
             } else {
@@ -111,7 +120,8 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                 putback();
             }
             break;
-        case '>':
+        }
+        case '>': {
             if (next() == '=') {
                 token.type = TokenType::GreaterEqual;
             } else {
@@ -119,7 +129,8 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                 putback();
             }
             break;
-        case '=':
+        }
+        case '=': {
             if (next() == '=')
                 token.type = TokenType::Equal;
             else {
@@ -127,7 +138,8 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                 token.type = TokenType::Assign;
             }
             break;
-        case '!':
+        }
+        case '!': {
             if (next() == '=')
                 token.type = TokenType::NotEqual;
             else {
@@ -135,10 +147,19 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                 token.type = TokenType::Exclaimation;
             }
             break;
-        case '"':
+        }
+        case '"': {
             token.type = TokenType::String;
             c = next();
             while (c != '"') {
+                if (c == '\\') {
+                    char e = next();
+                    auto it = escape_char_map.find(e);
+                    if (it == escape_char_map.end())
+                        throw Exception(to_string("use of unknown escape character \"", e, "\""),
+                                        Location(line, column, current_char_offset - start_offset));
+                    c = it->second;
+                }
                 token.value_s += c;
                 c = next();
                 if (c == '\0')
@@ -146,7 +167,24 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                                     Location(line, column, current_char_offset - start_offset));
             }
             break;
-        default:
+        }
+        case '\'': {
+            token.type = TokenType::Char;
+            c = next();
+            if (c == '\\') {
+                c = next();
+                auto it = escape_char_map.find(c);
+                if (it == escape_char_map.end())
+                    throw Exception(to_string("use of unknown escape character \"", c, "\""),
+                                    Location(line, column, current_char_offset - start_offset));
+                token.value_c = it->second;
+            } else {
+                token.value_c = c;
+            }
+            LLC_CHECK(next() == '\'');
+            break;
+        }
+        default: {
             if (is_digit(c)) {
                 token.type = TokenType::Number;
                 token.value = scan_value(c);
@@ -163,6 +201,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                 }
             }
             break;
+        }
         }
 
         if (!comment) {

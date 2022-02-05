@@ -34,9 +34,10 @@ std::string Location::operator()(const std::string& source) const {
 
 std::string enum_to_string(TokenType type) {
     static const char* map[] = {
-        "number", "++",         "--", "+", "-",  "*",  "/",  "(",  ")",       "{",   "}",
-        ";",      "identifier", ".",  ",", "<",  "<=", ">",  ">=", "==",      "!=",  "=",
-        "!",      "string",     "[",  "]", "+=", "-=", "*=", "/=", "invalid", "eof", "num_tokens"};
+        "number", "++", "--", "+",          "-",       "*",    "/",         "(",  ")",
+        "{",      "}",  ";",  "identifier", ".",       ",",    "<",         "<=", ">",
+        ">=",     "==", "!=", "=",          "!",       "char", "string",    "[",  "]",
+        "+=",     "-=", "*=", "/=",         "invalid", "eof",  "num_tokens"};
     std::string str;
     for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
         if ((uint64_t(type) >> i) & 1ul)
@@ -271,7 +272,11 @@ std::optional<Object> For::run(const Scope& scope) const {
 
     for (initialization(*internal_scope); condition(*internal_scope)->as<bool>();
          updation(*internal_scope)->as<bool>()) {
-        action->run(scope);
+        try {
+            action->run(scope);
+        } catch (const BreakLoop&) {
+            return std::nullopt;
+        }
     }
 
     return std::nullopt;
@@ -281,7 +286,11 @@ std::optional<Object> While::run(const Scope& scope) const {
     LLC_CHECK(action != nullptr);
 
     while (condition(scope)->as<bool>()) {
-        action->run(scope);
+        try {
+            action->run(scope);
+        } catch (const BreakLoop&) {
+            return std::nullopt;
+        }
     }
     return std::nullopt;
 }

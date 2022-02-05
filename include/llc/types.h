@@ -36,16 +36,17 @@ enum class TokenType : uint64_t {
     NotEqual = 1ul << 20,
     Assign = 1ul << 21,
     Exclaimation = 1ul << 22,
-    String = 1ul << 23,
-    LeftSquareBracket = 1ul << 24,
-    RightSquareBracket = 1ul << 25,
-    PlusEqual = 1ul << 26,
-    MinusEqual = 1ul << 27,
-    MultiplyEqual = 1ul << 28,
-    DivideEqual = 1ul << 29,
-    Invalid = 1ul << 30,
-    Eof = 1ul << 31,
-    NumTokens = 1ul << 32
+    Char = 1ul << 23,
+    String = 1ul << 24,
+    LeftSquareBracket = 1ul << 25,
+    RightSquareBracket = 1ul << 26,
+    PlusEqual = 1ul << 27,
+    MinusEqual = 1ul << 28,
+    MultiplyEqual = 1ul << 29,
+    DivideEqual = 1ul << 30,
+    Invalid = 1ul << 31,
+    Eof = 1ul << 32,
+    NumTokens = 1ul << 33
 };
 
 inline TokenType operator|(TokenType a, TokenType b) {
@@ -62,6 +63,7 @@ struct Token {
     Location location;
 
     float value;
+    char value_c;
     std::string value_s;
     std::string id;
 };
@@ -83,6 +85,8 @@ std::string get_type_name() {
 
 struct Object;
 struct Function;
+
+struct BreakLoop {};
 
 struct BaseFunction {
     virtual ~BaseFunction() = default;
@@ -1005,6 +1009,24 @@ struct NumberLiteral : BaseOp {
     float value;
 };
 
+struct CharLiteral : BaseOp {
+    CharLiteral(char value) : value(value){};
+
+    Object evaluate(const Scope&) const override {
+        return Object(value);
+    }
+
+    int get_precedence() const override {
+        return precedence;
+    }
+    void set_precedence(int prec) override {
+        precedence = prec;
+    }
+
+    int precedence = 10;
+    char value;
+};
+
 struct StringLiteral : BaseOp {
     StringLiteral(std::string value) : value(value){};
 
@@ -1596,6 +1618,13 @@ struct Return : Statement {
     }
 
     Expression expression;
+};
+
+struct Break : Statement {
+    std::optional<Object> run(const Scope&) const override {
+        throw BreakLoop();
+        return std::nullopt;
+    }
 };
 
 struct IfElseChain : Statement {

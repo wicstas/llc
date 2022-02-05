@@ -197,8 +197,6 @@ void mandelbrot_test() {
     try {
         Program program;
         program.bind<std::string>("string").bind("size", &std::string::size);
-        program.bind("newline", std::string("\n"));
-
         program.bind("prints", print<std::string>);
         program.bind("put", +[](std::string c) { std::cout << c << std::flush; });
 
@@ -217,22 +215,22 @@ void mandelbrot_test() {
                     float zy = 0.0f;
 
                     int iter = 0;
-                    for(int n = 0; n < 40; n++){
+                    for(;iter < 40; iter++){
                         float nx = zx * zx - zy * zy + cx;
                         float ny = 2.0f * zx * zy + cy;
                         zx = nx;
                         zy = ny;
                         if(zx * zx + zy * zy > 4.0f)
-                            n = 1000;
-                        iter++;
+                            break;
                     }
 
                     int k = symbols.size() * iter / 41.0f;
                     string pixel = " ";
+                    char x = 'H';
                     pixel[0] = symbols[k];
                     pixels += pixel;
                 }
-                pixels += newline;
+                pixels += "\n";
                 put("+");
             }
 

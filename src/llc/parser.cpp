@@ -41,6 +41,9 @@ void Parser::parse_recursively(std::shared_ptr<Scope> scope, bool end_on_new_lin
             } else if (token->id == "return") {
                 scope->statements.push_back(std::make_shared<Return>(build_expression(scope)));
 
+            } else if (token->id == "break") {
+                scope->statements.push_back(std::make_shared<Break>());
+
             } else if (token->id == "if") {
                 std::vector<Expression> exprs;
                 std::vector<std::shared_ptr<Scope>> actions;
@@ -257,6 +260,8 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
             break;
         } else if (token.type == TokenType::Number)
             expression.operands.push_back(std::make_shared<NumberLiteral>(token.value));
+        else if (token.type == TokenType::Char)
+            expression.operands.push_back(std::make_shared<CharLiteral>(token.value_c));
         else if (token.type == TokenType::String)
             expression.operands.push_back(std::make_shared<StringLiteral>(token.value_s));
         else if (token.type == TokenType::Dot) {
