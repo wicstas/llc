@@ -368,8 +368,6 @@ Expression Parser::build_expression(std::shared_ptr<Scope> scope) {
                     std::make_shared<FunctionCallOp>(build_functioncall(scope, token.id)));
             } else {
                 expression.operands.push_back(std::make_shared<VariableOp>(token.id));
-                // throw_exception("\"", token.id, "\" is neither a function nor a variable:\n",
-                //                 token.location(source));
             }
         } else {
             throw_exception("unrecognized operand \"", enum_to_string(token.type), "\":\n",
