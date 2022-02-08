@@ -198,14 +198,12 @@ void mandelbrot_test() {
     try {
         Program program;
         program.bind<std::string>("string").ctor<int, char>().bind("size", &std::string::size);
-        program.bind(
-            "put", +[](std::string c) { std::cout << c << std::flush; });
+        program.bind("puts", print<std::string>);
 
         program.source = R"(
             string symbols = " .:;x%#@";
             string pixels = "";
 
-            put("rendering:");
             for(float i = 0; i < 40; i++){
                 for(float j = 0; j < 80; j++){
                     float cx = j / (80.0f / 3.0f) - 1.5f;
@@ -214,7 +212,7 @@ void mandelbrot_test() {
                     float zy = 0.0f;
 
                     int iter = 0;
-                    int niter = 100;
+                    int niter = 40;
                     for(;iter < niter; iter++){
                         float nx = zx * zx - zy * zy + cx;
                         float ny = 2.0f * zx * zy + cy;
@@ -228,28 +226,14 @@ void mandelbrot_test() {
                     pixels += string(1, symbols[k]);
                 }
                 pixels += "\n";
-                put("+");
             }
 
-            put(pixels);
+            puts(pixels);
         )";
 
         Compiler compiler;
-
-        {
-            auto start = std::chrono::high_resolution_clock::now();
-            compiler.compile(program);
-            auto end = std::chrono::high_resolution_clock::now();
-            print("compilation time: ", std::chrono::duration<float>(end - start).count() * 1000.0f,
-                  " ms");
-        }
-
-        {
-            auto start = std::chrono::high_resolution_clock::now();
-            program.run();
-            auto end = std::chrono::high_resolution_clock::now();
-            print("render time: ", std::chrono::duration<float>(end - start).count(), " s");
-        }
+        compiler.compile(program);
+        program.run();
 
     } catch (const std::exception& exception) {
         print(exception.what());
@@ -276,7 +260,7 @@ void benchmark() {
             auto end = std::chrono::high_resolution_clock::now();
             float ms = std::chrono::duration<float>(end - start).count() * 1e+3f;
             float ns = ms * 1e+6f;
-            print("100000 loop run time: ", ms, " ms, ", ns / 100000, " ns / loop");
+            print("100000 loop run in: ", ms, " ms, avg: ", ns / 100000, " ns / loop");
         }
 
     } catch (const std::exception& exception) {
