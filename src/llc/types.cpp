@@ -4,14 +4,14 @@
 
 namespace llc {
 
-std::map<size_t, std::string> type_id_to_name = {
-    {typeid(int).hash_code(), "int"},           {typeid(char).hash_code(), "char"},
-    {typeid(uint8_t).hash_code(), "uint8_t"},   {typeid(uint16_t).hash_code(), "uint16_t"},
-    {typeid(uint32_t).hash_code(), "uint32_t"}, {typeid(uint64_t).hash_code(), "uint64_t"},
-    {typeid(int8_t).hash_code(), "int8_t"},     {typeid(int16_t).hash_code(), "int16_t"},
-    {typeid(int64_t).hash_code(), "int64_t"},   {typeid(float).hash_code(), "float"},
-    {typeid(double).hash_code(), "double"},     {typeid(std::string).hash_code(), "string"},
-    {typeid(bool).hash_code(), "bool"},
+std::unordered_map<size_t, std::string> type_id_to_name = {
+    {typeid(void).hash_code(), "void"},           {typeid(int).hash_code(), "int"},
+    {typeid(char).hash_code(), "char"},          {typeid(uint8_t).hash_code(), "uint8_t"},
+    {typeid(uint16_t).hash_code(), "uint16_t"},  {typeid(uint32_t).hash_code(), "uint32_t"},
+    {typeid(uint64_t).hash_code(), "uint64_t"},  {typeid(int8_t).hash_code(), "int8_t"},
+    {typeid(int16_t).hash_code(), "int16_t"},    {typeid(int64_t).hash_code(), "int64_t"},
+    {typeid(float).hash_code(), "float"},        {typeid(double).hash_code(), "double"},
+    {typeid(std::string).hash_code(), "string"}, {typeid(bool).hash_code(), "bool"},
 };
 
 std::string Location::operator()(const std::string& source) const {
@@ -19,16 +19,18 @@ std::string Location::operator()(const std::string& source) const {
     LLC_CHECK(column >= 0);
     LLC_CHECK(length > 0);
     std::vector<std::string> lines = separate_lines(source);
+    LLC_CHECK(column + length <= (int)lines[line].size());
 
     std::string location = std::to_string(line) + ':' + std::to_string(column) + ':';
     if (filepath != "")
         location = filepath + ':' + location;
+
     std::string raw = lines[line];
     std::string underline(raw.size(), ' ');
-    for (int i = 0; i < length; i++) {
-        LLC_CHECK(column + i < (int)underline.size());
+
+    for (int i = 0; i < length; i++)
         underline[column + i] = '~';
-    }
+
     return location + '\n' + raw + '\n' + underline;
 }
 
@@ -48,13 +50,14 @@ std::string enum_to_string(TokenType type) {
     return str;
 }
 
-Object& BaseObject::get_member(std::string name) {
+Object& BaseObject::get_member(const std::string& name) {
     if (members.find(name) == members.end())
-        throw_exception("cannot find member \"", name, "\"");
+        throw_exception("cannot find member \"", name, '"');
     return members[name];
 }
 
 Scope::Scope() {
+    types["void"] = Object();
     types["int"] = Object(int(0));
     types["char"] = Object(char(0));
     types["uint8_t"] = Object(uint8_t(0));
@@ -78,32 +81,32 @@ std::optional<Object> Scope::run(const Scope&) const {
 
     return std::nullopt;
 }
-std::optional<Object> Scope::find_type(std::string name) const {
+std::optional<Object> Scope::find_type(const std::string& name) const {
     auto it = types.find(name);
     if (it == types.end())
         return parent ? parent->find_type(name) : std::nullopt;
     else
         return it->second;
 }
-std::optional<Object> Scope::find_variable(std::string name) const {
+std::optional<Object> Scope::find_variable(const std::string& name) const {
     auto it = variables.find(name);
     if (it == variables.end())
         return parent ? parent->find_variable(name) : std::nullopt;
     else
         return it->second;
 }
-std::optional<Function> Scope::find_function(std::string name) const {
+std::optional<Function> Scope::find_function(const std::string& name) const {
     auto it = functions.find(name);
     if (it == functions.end())
         return parent ? parent->find_function(name) : std::nullopt;
     else
         return it->second;
 }
-Object& Scope::get_variable(std::string name) const {
+Object& Scope::get_variable(const std::string& name) const {
     auto it = variables.find(name);
     if (it == variables.end()) {
         if (!parent)
-            throw_exception("cannot get varaible \"", name, "\"");
+            throw_exception("cannot get varaible \"", name, '"');
         return parent->get_variable(name);
     } else
         return it->second;
@@ -152,8 +155,6 @@ std::optional<Object> InternalFunction::run(const Scope& scope,
     for (auto& var : this_scope)
         *var.second = definition->variables[var.first];
 
-    if (result.has_value() != return_type.has_value())
-        throw_exception("function does not return the type specified at its declaration");
     return result;
 }
 
@@ -172,7 +173,7 @@ std::optional<Object> ExternalFunction::run(const Scope& scope,
 Object MemberFunctionCall::evaluate(const Scope& scope) const {
     if (operand->original(scope).base->functions.find(function_name) ==
         operand->original(scope).base->functions.end())
-        throw_exception("cannot find function \"", function_name, "\"");
+        throw_exception("cannot find function \"", function_name, '"');
 
     if (auto result =
             operand->original(scope).base->functions[function_name].run(scope, arguments)) {
@@ -247,33 +248,33 @@ void Expression::collapse() {
 }
 
 std::optional<Object> IfElseChain::run(const Scope& scope) const {
-    LLC_CHECK(conditions.size() == actions.size() || conditions.size() == actions.size() - 1);
-    for (int i = 0; i < (int)actions.size(); i++)
-        LLC_CHECK(actions[i] != nullptr);
+    LLC_CHECK(conditions.size() == bodys.size() || conditions.size() == bodys.size() - 1);
+    for (int i = 0; i < (int)bodys.size(); i++)
+        LLC_CHECK(bodys[i] != nullptr);
 
     for (int i = 0; i < (int)conditions.size(); i++) {
         try {
             if (conditions[i](scope)->as<bool>())
-                actions[i]->run(scope);
+                bodys[i]->run(scope);
         } catch (const std::optional<Object>& object) {
             throw object;
         }
     }
 
-    if (conditions.size() == actions.size() - 1) {
-        actions.back()->run(scope);
+    if (conditions.size() == bodys.size() - 1) {
+        bodys.back()->run(scope);
     }
 
     return std::nullopt;
 }
 
 std::optional<Object> For::run(const Scope& scope) const {
-    LLC_CHECK(action != nullptr);
+    LLC_CHECK(body != nullptr);
 
     for (initialization(*internal_scope); condition(*internal_scope)->as<bool>();
          updation(*internal_scope)->as<bool>()) {
         try {
-            action->run(scope);
+            body->run(scope);
         } catch (const BreakLoop&) {
             return std::nullopt;
         }
@@ -283,11 +284,11 @@ std::optional<Object> For::run(const Scope& scope) const {
 }
 
 std::optional<Object> While::run(const Scope& scope) const {
-    LLC_CHECK(action != nullptr);
+    LLC_CHECK(body != nullptr);
 
     while (condition(scope)->as<bool>()) {
         try {
-            action->run(scope);
+            body->run(scope);
         } catch (const BreakLoop&) {
             return std::nullopt;
         }

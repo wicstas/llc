@@ -8,8 +8,12 @@ namespace llc {
 
 struct Compiler {
     void compile(Program& program) {
-        auto tokens = tokenizer.tokenize(program);
-        parser.parse(program, tokens);
+        try {
+            auto tokens = tokenizer.tokenize(program);
+            parser.parse(program, tokens);
+        } catch (const Exception& exception) {
+            throw_exception(exception(program.source));
+        }
     }
 
   private:

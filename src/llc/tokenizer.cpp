@@ -18,16 +18,26 @@ static inline bool is_alpha(char c) {
 }
 
 char Tokenizer::next() {
-    if (current_char_offset == source_char_count)
-        throw Exception("Tokenizer::next(): try to access beyond string end");
+    LLC_CHECK(current_char_offset < source_char_count);
     current_char_offset++;
     column++;
-    return *(text++);
+    char c = *(text++);
+    if (c == EOF)
+        c = '\0';
+    if (is_newline(c)) {
+        line++;
+        column = 0;
+    }
+    return c;
 }
 void Tokenizer::putback() {
-    current_char_offset--;
-    column--;
-    text--;
+    --current_char_offset;
+    --column;
+    char c = *(--text);
+    if (is_newline(c)) {
+        line--;
+        // TODO: column = ?;
+    }
 }
 
 static const std::map<char, char> escape_char_map = {
@@ -40,14 +50,13 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
     column = 0;
     current_char_offset = 0;
     int start_offset = 0;
-    source_char_count = (int)program.source.size();
-    bool comment = false;
+    source_char_count = (int)program.source.size() + 1;
+    bool is_comment = false;
 
-    skip(text);
+    skip();
     while (char c = next()) {
         Token token;
         switch (c) {
-        case EOF: token.type = TokenType::Eof; break;
         case '+': {
             c = next();
             if (c == '+')
@@ -87,7 +96,7 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
 
         case '/': {
             if (next() == '/') {
-                comment = true;
+                is_comment = true;
                 while (!is_newline(next())) {
                 }
                 putback();
@@ -156,15 +165,12 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                     char e = next();
                     auto it = escape_char_map.find(e);
                     if (it == escape_char_map.end())
-                        throw Exception(to_string("use of unknown escape character \"", e, "\""),
+                        throw_exception(to_string("use of unknown escape character \"", e, '"'),
                                         Location(line, column, current_char_offset - start_offset));
                     c = it->second;
                 }
                 token.value_s += c;
                 c = next();
-                if (c == '\0')
-                    throw Exception("missing \"",
-                                    Location(line, column, current_char_offset - start_offset));
             }
             break;
         }
@@ -175,13 +181,18 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
                 c = next();
                 auto it = escape_char_map.find(c);
                 if (it == escape_char_map.end())
-                    throw Exception(to_string("use of unknown escape character \"", c, "\""),
+                    throw_exception(to_string("use of unknown escape character \"", c, '"'),
                                     Location(line, column, current_char_offset - start_offset));
                 token.value_c = it->second;
             } else {
                 token.value_c = c;
             }
-            LLC_CHECK(next() == '\'');
+            if (next() != '\'') {
+                print(separate_lines(program.source)[line].size(), ' ', line, ' ', column, ' ',
+                      current_char_offset - start_offset);
+                throw_exception("missing \':\n",
+                                Location(line, column, current_char_offset - start_offset));
+            }
             break;
         }
         default: {
@@ -204,24 +215,15 @@ std::vector<Token> Tokenizer::tokenize(const Program& program) {
         }
         }
 
-        if (!comment) {
+        if (!is_comment) {
             int length = current_char_offset - start_offset;
             token.location = Location(line, column - length, length, program.filepath);
             tokens.push_back(token);
         }
-        comment = false;
+        is_comment = false;
 
-        if (tokens.size() && tokens.back().type == TokenType::Eof)
-            break;
-
-        skip(text);
+        skip();
         start_offset = current_char_offset;
-    }
-
-    if (tokens.size() == 0 || tokens.back().type != TokenType::Eof) {
-        Token token;
-        token.type = TokenType::Eof;
-        tokens.push_back(token);
     }
 
     return tokens;
@@ -261,15 +263,12 @@ std::string Tokenizer::scan_string(char c) {
     return str;
 }
 
-void Tokenizer::skip(const char*& ptr) {
-    while (is_space(*ptr) || is_newline(*ptr)) {
-        column++;
-        if (is_newline(*ptr)) {
-            line++;
-            column = 0;
-        }
-        ptr++;
-    }
+void Tokenizer::skip() {
+    char c = next();
+    while (is_space(c) || is_newline(c))
+        c = next();
+
+    putback();
 }
 
 }  // namespace llc

@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <unordered_map>
 
 namespace llc {
 
@@ -45,8 +46,7 @@ enum class TokenType : uint64_t {
     MultiplyEqual = 1ul << 29,
     DivideEqual = 1ul << 30,
     Invalid = 1ul << 31,
-    Eof = 1ul << 32,
-    NumTokens = 1ul << 33
+    NumTokens = 1ul << 32
 };
 
 inline TokenType operator|(TokenType a, TokenType b) {
@@ -71,7 +71,7 @@ struct Token {
 struct Scope;
 struct Expression;
 
-extern std::map<size_t, std::string> type_id_to_name;
+extern std::unordered_map<size_t, std::string> type_id_to_name;
 
 template <typename T>
 std::string get_type_name() {
@@ -79,9 +79,23 @@ std::string get_type_name() {
     auto it = type_id_to_name.find(typeid(Ty).hash_code());
     if (it == type_id_to_name.end())
         throw_exception("cannot get name of unregistered type T, typeid(T).name(): \"",
-                        typeid(Ty).name(), "\"");
+                        typeid(Ty).name(), '"');
     return it->second;
 }
+
+inline std::string get_type_name(size_t type_id) {
+    auto it = type_id_to_name.find(type_id);
+    if (it == type_id_to_name.end())
+        throw_exception("cannot get name of unregistered type T");
+    return it->second;
+}
+
+static const size_t typeid_bool = typeid(bool).hash_code();
+static const size_t typeid_int = typeid(int).hash_code();
+static const size_t typeid_char = typeid(char).hash_code();
+static const size_t typeid_float = typeid(float).hash_code();
+static const size_t typeid_double = typeid(double).hash_code();
+static const size_t typeid_size_t = typeid(size_t).hash_code();
 
 struct Object;
 struct Function;
@@ -97,12 +111,12 @@ struct BaseFunction {
 
 struct BaseObject {
     BaseObject() = default;
-    BaseObject(std::string type_name) : type_name_(type_name){};
+    BaseObject(size_t type_id) : type_id_(type_id){};
     virtual ~BaseObject() = default;
     virtual BaseObject* clone() const = 0;
-    virtual BaseObject* alloc() const = 0;
 
-    virtual Object construct(const std::vector<Object>& objects) = 0;
+    virtual BaseObject* alloc() const = 0;
+    virtual Object construct(const std::vector<Object>& objects) const = 0;
 
     virtual void* ptr() const = 0;
     virtual void assign(const BaseObject* rhs) = 0;
@@ -125,68 +139,94 @@ struct BaseObject {
 
     template <typename T>
     T as() const {
-        if constexpr (std::is_arithmetic<T>::value) {
-            if (type_name() == "int")
-                return T(*(int*)ptr());
-            else if (type_name() == "bool")
+        using Ty = std::decay_t<T>;
+
+        if constexpr (std::is_fundamental<Ty>::value) {
+            if (type_id() == typeid_bool)
                 return T(*(bool*)ptr());
-            else if (type_name() == "uint8_t")
-                return T(*(uint8_t*)ptr());
-            else if (type_name() == "uint16_t")
-                return T(*(uint16_t*)ptr());
-            else if (type_name() == "uint32_t")
-                return T(*(uint32_t*)ptr());
-            else if (type_name() == "uint64_t")
-                return T(*(uint64_t*)ptr());
-            else if (type_name() == "float")
+            else if (type_id() == typeid_int)
+                return T(*(int*)ptr());
+            else if (type_id() == typeid_char)
+                return T(*(char*)ptr());
+            else if (type_id() == typeid_float)
                 return T(*(float*)ptr());
+            else if (type_id() == typeid_double)
+                return T(*(double*)ptr());
+            else if (type_id() == typeid_size_t)
+                return T(*(size_t*)ptr());
         }
-
-        if (type_name() != get_type_name<T>())
+        if (type_id() != typeid(Ty).hash_code())
             throw_exception("cannot convert type \"", type_name(), "\" to type \"",
-                            get_type_name<std::decay_t<T>>(), "\"");
+                            get_type_name<Ty>(), '"');
 
-        return *(std::decay_t<T>*)ptr();
+        return *(Ty*)ptr();
     }
 
-    template <typename T>
+    template <typename T, typename = typename std::enable_if_t<!std::is_reference_v<T>>>
     std::optional<T> as_opt() const {
-        if constexpr (std::is_arithmetic<T>::value) {
-            if (type_name() == "int")
-                return T(*(int*)ptr());
-            else if (type_name() == "bool")
-                return T(*(bool*)ptr());
-            else if (type_name() == "uint8_t")
-                return T(*(uint8_t*)ptr());
-            else if (type_name() == "uint16_t")
-                return T(*(uint16_t*)ptr());
-            else if (type_name() == "uint32_t")
-                return T(*(uint32_t*)ptr());
-            else if (type_name() == "uint64_t")
-                return T(*(uint64_t*)ptr());
-            else if (type_name() == "float")
-                return T(*(float*)ptr());
-        }
+        using Ty = std::decay_t<T>;
 
-        if (type_name() != get_type_name<T>())
+        if constexpr (std::is_fundamental<Ty>::value) {
+            if (type_id() == typeid_bool)
+                return T(*(bool*)ptr());
+            else if (type_id() == typeid_int)
+                return T(*(int*)ptr());
+            else if (type_id() == typeid_char)
+                return T(*(char*)ptr());
+            else if (type_id() == typeid_float)
+                return T(*(float*)ptr());
+            else if (type_id() == typeid_double)
+                return T(*(double*)ptr());
+            else if (type_id() == typeid_size_t)
+                return T(*(size_t*)ptr());
+        }
+        if (type_id() != typeid(Ty).hash_code())
             return std::nullopt;
 
-        return *(std::decay_t<T>*)ptr();
+        return *(Ty*)ptr();
     }
 
-    std::string type_name() const {
-        return type_name_;
+    template <typename T, typename = typename std::enable_if_t<std::is_reference_v<T>>>
+    std::optional<std::reference_wrapper<std::decay_t<T>>> as_opt() const {
+        using Ty = std::decay_t<T>;
+
+        if constexpr (std::is_fundamental<Ty>::value) {
+            if (type_id() == typeid_bool)
+                return T(*(bool*)ptr());
+            else if (type_id() == typeid_int)
+                return T(*(int*)ptr());
+            else if (type_id() == typeid_char)
+                return T(*(char*)ptr());
+            else if (type_id() == typeid_float)
+                return T(*(float*)ptr());
+            else if (type_id() == typeid_double)
+                return T(*(double*)ptr());
+            else if (type_id() == typeid_size_t)
+                return T(*(size_t*)ptr());
+        }
+        if (type_id() != typeid(Ty).hash_code())
+            return std::nullopt;
+
+        return *(Ty*)ptr();
     }
-    Object& get_member(std::string name);
+
+    Object& get_member(const std::string& name);
+
+    std::string type_name() const {
+        return get_type_name(type_id());
+    }
+    size_t type_id() const {
+        return type_id_;
+    }
 
     mutable std::map<std::string, Object> members;
     mutable std::map<std::string, Function> functions;
 
-    std::string type_name_;
+    size_t type_id_ = -1;
 };
 
 struct Object {
-    static Object construct(Object type, std::vector<Object> args) {
+    static Object construct(const Object& type, const std::vector<Object>& args) {
         LLC_CHECK(type.base != nullptr);
         return type.base->construct(args);
     }
@@ -222,14 +262,14 @@ struct Object {
     template <typename T>
     T as() const {
         if (base == nullptr)
-            throw_exception("cannot cast \"void\" to type \"", get_type_name<T>(), "\"");
+            throw_exception("cannot cast \"void\" to type \"", get_type_name<T>(), '"');
         return base->as<T>();
     }
 
     template <typename T>
     std::optional<T> as_opt() const {
         if (base == nullptr)
-            throw_exception("cannot cast \"void\" to type \"", get_type_name<T>(), "\"");
+            throw_exception("cannot cast \"void\" to type \"", get_type_name<T>(), '"');
         return base->as_opt<T>();
     }
 
@@ -330,11 +370,12 @@ struct Object {
         LLC_CHECK(base != nullptr);
         return base->get_member(name);
     }
-    Object& operator[](std::string name) && {
+    Object& operator[](std::string) && {
         LLC_CHECK(base != nullptr);
         throw_exception("cannot get member(which store a reference to part of that temporary "
                         "object) of temporary object");
-        return base->get_member(name);
+        static Object null_object;
+        return null_object;
     }
 
     struct ArrayElementProxy {
@@ -363,7 +404,7 @@ struct Object {
 template <typename T>
 struct ConcreteObject : BaseObject {
     ConcreteObject() = default;
-    ConcreteObject(T value) : BaseObject(get_type_name<T>()), value(value){};
+    ConcreteObject(T value) : BaseObject(typeid(T).hash_code()), value(value){};
 
     BaseObject* clone() const override;
     BaseObject* alloc() const override {
@@ -377,14 +418,21 @@ struct ConcreteObject : BaseObject {
         }
     }
 
-    Object construct(const std::vector<Object>& objects) override {
-        if (constructors.size() == 0)
-            throw_exception("no constructor was binded for type \"", type_name(), "\"");
-        for (const auto& ctor : constructors)
-            if (ctor->is_viable(objects))
-                return ctor->construct(objects);
-        throw_exception("no viable constructor found for type \"", type_name(), "\"");
-        return {};
+    Object construct(const std::vector<Object>& objects) const override {
+        if constexpr (std::is_fundamental_v<T>) {
+            if (objects.size() > 1)
+                throw_exception("more than one arguments passed to the constructor of type \"",
+                                type_name(), '"');
+            return objects.size() ? Object(objects[0].as<T>()) : Object(T());
+        } else {
+            if (constructors.size() == 0)
+                throw_exception("no constructor was binded for type \"", type_name(), '"');
+            for (const auto& ctor : constructors)
+                if (ctor->is_viable(objects))
+                    return ctor->construct(objects);
+            throw_exception("no viable constructor found for type \"", type_name(), '"');
+            return {};
+        }
     }
 
     void* ptr() const override {
@@ -565,7 +613,7 @@ struct InternalObject : BaseObject {
         return nullptr;
     }
 
-    Object construct(const std::vector<Object>& objects) override {
+    Object construct(const std::vector<Object>& objects) const override {
         LLC_CHECK(objects.size() == members.size());
         throw_exception("internal object does not support constructor yet");
         return {};
@@ -681,7 +729,7 @@ struct InternalFunction : BaseFunction {
     std::optional<Object> run(const Scope& scope,
                               const std::vector<Expression>& exprs) const override;
 
-    std::optional<Object> return_type;
+    Object return_type;
     std::shared_ptr<Scope> definition;
     std::map<std::string, Object*> this_scope;
     std::vector<std::string> parameters;
@@ -869,9 +917,8 @@ template <typename T>
 BaseObject* ConcreteObject<T>::clone() const {
     ConcreteObject<T>* object = new ConcreteObject<T>(*this);
     object->bind_members();
-    for (auto& f : object->functions) {
+    for (auto& f : object->functions)
         dynamic_cast<ExternalFunction*>(f.second.base.get())->bind_object(object);
-    }
     return object;
 }
 
@@ -913,17 +960,16 @@ struct Scope : Statement {
 
     std::optional<Object> run(const Scope& scope) const override;
 
-    std::optional<Object> find_type(std::string name) const;
-    std::optional<Object> find_variable(std::string name) const;
-    std::optional<Function> find_function(std::string name) const;
-
-    Object& get_variable(std::string name) const;
+    std::optional<Object> find_type(const std::string& name) const;
+    std::optional<Object> find_variable(const std::string& name) const;
+    std::optional<Function> find_function(const std::string& name) const;
+    Object& get_variable(const std::string& name) const;
 
     std::shared_ptr<Scope> parent;
     std::vector<std::shared_ptr<Statement>> statements;
-    mutable std::map<std::string, Object> types;
-    mutable std::map<std::string, Object> variables;
-    mutable std::map<std::string, Function> functions;
+    mutable std::unordered_map<std::string, Object> types;
+    mutable std::unordered_map<std::string, Object> variables;
+    mutable std::unordered_map<std::string, Function> functions;
 };
 
 struct Operand {
@@ -1049,18 +1095,16 @@ struct VariableOp : BaseOp {
     VariableOp(std::string name) : name(name){};
 
     Object evaluate(const Scope& scope) const override {
-        LLC_CHECK(scope.find_variable(name).has_value());
         return scope.get_variable(name);
     }
 
     Object assign(const Scope& scope, const Object& value) override {
-        LLC_CHECK(scope.find_variable(name).has_value());
-        scope.get_variable(name).assign(value);
-        return scope.get_variable(name);
+        auto& object = scope.get_variable(name);
+        object.assign(value);
+        return object;
     }
 
     Object& original(const Scope& scope) const override {
-        LLC_CHECK(scope.find_variable(name).has_value());
         return scope.get_variable(name);
     }
 
@@ -1231,7 +1275,7 @@ struct Addition : BinaryOp {
     int precedence = 4;
 };
 
-struct Subtraction : BinaryOp {
+struct Subtrbody : BinaryOp {
     Object evaluate(const Scope& scope) const override {
         return a->evaluate(scope) - b->evaluate(scope);
     }
@@ -1332,7 +1376,8 @@ struct DivideEqual : BinaryOp {
 struct PostIncrement : PostUnaryOp {
     Object evaluate(const Scope& scope) const override {
         auto old = operand->evaluate(scope);
-        operand->assign(scope, ++operand->evaluate(scope));
+        auto temp = old;
+        operand->assign(scope, ++temp);
         return old;
     }
 
@@ -1349,7 +1394,8 @@ struct PostIncrement : PostUnaryOp {
 struct PostDecrement : PostUnaryOp {
     Object evaluate(const Scope& scope) const override {
         auto old = operand->evaluate(scope);
-        operand->assign(scope, --operand->evaluate(scope));
+        auto temp = old;
+        operand->assign(scope, --temp);
         return old;
     }
 
@@ -1579,7 +1625,7 @@ struct FunctionCall : Statement {
         if (auto func = scope.find_function(function_name))
             return func->run(scope, arguments);
         else
-            throw_exception("cannot find function \"", function_name, "\"");
+            throw_exception("cannot find function \"", function_name, '"');
         return std::nullopt;
     }
 
@@ -1628,38 +1674,37 @@ struct Break : Statement {
 };
 
 struct IfElseChain : Statement {
-    IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Scope>> actions)
-        : conditions(conditions), actions(actions){};
+    IfElseChain(std::vector<Expression> conditions, std::vector<std::shared_ptr<Scope>> bodys)
+        : conditions(conditions), bodys(bodys){};
 
     std::optional<Object> run(const Scope& scope) const override;
 
     std::vector<Expression> conditions;
-    std::vector<std::shared_ptr<Scope>> actions;
+    std::vector<std::shared_ptr<Scope>> bodys;
 };
 
 struct For : Statement {
     For(Expression initialization, Expression condition, Expression updation,
-        std::shared_ptr<Scope> internal_scope, std::shared_ptr<Scope> action)
+        std::shared_ptr<Scope> internal_scope, std::shared_ptr<Scope> body)
         : initialization(initialization),
           condition(condition),
           updation(updation),
           internal_scope(internal_scope),
-          action(action){};
+          body(body){};
 
     std::optional<Object> run(const Scope& scope) const override;
 
     Expression initialization, condition, updation;
-    std::shared_ptr<Scope> internal_scope, action;
+    std::shared_ptr<Scope> internal_scope, body;
 };
 
 struct While : Statement {
-    While(Expression condition, std::shared_ptr<Scope> action)
-        : condition(condition), action(action){};
+    While(Expression condition, std::shared_ptr<Scope> body) : condition(condition), body(body){};
 
     std::optional<Object> run(const Scope& scope) const override;
 
     Expression condition;
-    std::shared_ptr<Scope> action;
+    std::shared_ptr<Scope> body;
 };
 
 struct Program {
@@ -1840,7 +1885,7 @@ struct Program {
         else if (scope->find_function(name))
             return Proxy(scope, scope->functions[name]);
         else
-            throw_exception("\"", name, " is neither a function nor a variable");
+            throw_exception('"', name, " is neither a function nor a variable");
         return {};
     }
 

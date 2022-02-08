@@ -6,6 +6,7 @@
 #include <iostream>
 #include <utility>
 #include <vector>
+#include <tuple>
 
 namespace llc {
 
@@ -67,9 +68,26 @@ struct Exception : std::exception {
     Location location;
 };
 
+template <typename Tuple, size_t... I>
+std::string throw_exception_helper(const Tuple& tuple, std::index_sequence<I...>) {
+    return to_string(std::get<I>(tuple)...);
+}
+
+template <typename Tuple, size_t... I>
+std::string throw_exception_helper(const Tuple&, std::index_sequence<>) {
+    return "";
+}
+
 template <typename... Args>
 void throw_exception(const Args&... args) {
-    throw Exception(to_string(args...));
+    auto tuple = std::make_tuple(args...);
+
+    auto last = std::get<sizeof...(args) - 1>(tuple);
+    if constexpr (std::is_same_v<decltype(last), Location>)
+        throw Exception(
+            throw_exception_helper(tuple, std::make_index_sequence<sizeof...(args) - 1>()), last);
+    else
+        throw Exception(to_string(args...));
 }
 
 #define LLC_CHECK(x)                                                                            \
