@@ -1,4 +1,4 @@
-#### **note**: c++ 17 is required, work-in-progress
+#### **note**: c++ 17 is required
 ## Minimal example:
 ```c++
 #include <llc/compiler.h>
